@@ -1,14 +1,17 @@
 # DeskPad
 
-A virtual monitor for screen sharing on macOS. The app creates a virtual display via the private `CGVirtualDisplay` API (declared in `DeskPad/DeskPad-Bridging-Header.h`, no public docs) and mirrors its contents into an app window.
+A virtual monitor for screen sharing on macOS. The app creates a virtual display via the private `CGVirtualDisplay` API (declared in `DeskPad/DeskPad-Bridging-Header.h`, no public docs) and mirrors its contents into an app window through a ScreenCaptureKit + Metal pipeline (see CR-0001).
 
 ## Project facts
 
-- macOS app, Swift, AppKit, deployment target macOS 13.0
-- State management: ReSwift (SPM dependency), unidirectional flow: Action -> Store -> Reducer -> Subscriber
-- Layout: `DeskPad/Backend/` (state, side effects), `DeskPad/Frontend/` (view controllers, view data), `DeskPad/Helpers/`
+- macOS app, Swift 6 with `SWIFT_STRICT_CONCURRENCY = complete`, AppKit, deployment target macOS 15.0
+- Rendering pipeline: `ScreenCaptureKit` (`SCStream`) captures the virtual display on a dedicated background queue; frames are presented via a `CAMetalLayer` paced by `CAMetalDisplayLink` with a dirty-bit gate and a newest-frame-wins drop policy. No `CGDisplayStream` and no `CVDisplayLink` anywhere. See `docs/cr/CR-0001-gpu-rendering-pipeline.md`.
+- State management: ReSwift (SPM dependency), unidirectional flow: Action -> Store -> Reducer -> Subscriber. ReSwift is intentionally out of the frame-delivery hot path; the capture/render subsystem is self-contained.
+- Layout: `DeskPad/Backend/` (state, side effects, plus `Capture/` and `Render/` subsystems), `DeskPad/Frontend/` (view controllers, view data, Metal layer host view, capture-render coordinator), `DeskPad/Helpers/`, `DeskPad/Logging/` (structured logger + rotating file sink)
+- Tests: `DeskPadTests/` target in `DeskPad.xcodeproj` (created by CR-0001); run with `xcodebuild -scheme DeskPad test`. Mirrors the source namespace (`Logging/`, `Capture/`, `Render/`, `Integration/`, `Performance/`).
 - Build: `xcodebuild -scheme DeskPad -configuration Release -derivedDataPath build`
-- Screen Recording (TCC) permission is required for the mirror view; permission grants are tied to the code signature, so unsigned builds re-prompt on every launch. Sign at least ad-hoc (`CODE_SIGN_IDENTITY="-"`).
+- Screen Recording (TCC) permission is required for the mirror view; permission grants are tied to the code signature, so unsigned builds re-prompt on every launch. Sign at least ad-hoc (`CODE_SIGN_IDENTITY="-"`). Revocation mid-session is detected via `CGPreflightScreenCaptureAccess` and re-prompted via `CGRequestScreenCaptureAccess` without restarting the app.
+- Logs: structured `os.Logger` lines tagged `filename:line` are teed to `~/Library/Logs/DeskPad/deskpad.log` with size-based rotation. Tail with `.agents/scripts/tail-deskpad-log.sh`.
 - Governance: Change Requests live under `docs/cr/`. Author with the `/governance` skill, run with `/run-cr-team`.
 
 ## Finding code: @agents-index

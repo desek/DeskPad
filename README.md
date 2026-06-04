@@ -17,6 +17,9 @@ Certain workflows require sharing the entire screen (usually due to switching th
 
 DeskPad creates a virtual display that is mirrored within its application window so that you can create a dedicated, easily shareable workspace.
 
+# Requirements
+macOS 15.0 or later on an Apple Silicon or Intel Mac with Metal 3 support. DeskPad's capture pipeline is built on ScreenCaptureKit and a Metal-backed `CAMetalLayer` paced by `CAMetalDisplayLink`; earlier macOS versions are not supported. Users on macOS 13 or 14 should stay on the last DeskPad release that targeted their OS version.
+
 # Installation
 You can either download the [latest release binary](https://github.com/Stengo/DeskPad/releases) or install via [Homebrew](https://brew.sh) by calling `brew install --cask deskpad`.
 
