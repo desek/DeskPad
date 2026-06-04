@@ -31,8 +31,10 @@ power-efficient, and resilient to stream and permission disruptions.
 ## Motivation and Background
 
 DeskPad's purpose is to expose a virtual display as an ordinary mirrored window so a
-presenter can share a smaller workspace. The current implementation works, but three
-forces now push for a redesign:
+presenter can share a smaller workspace, and increasingly to host latency-sensitive
+interactive content (for example playing 3D platformer games on the virtual display,
+not only mirroring documents or screen-sharing slides). The current implementation
+works for the static-content case, but four forces now push for a redesign:
 
 1. **Deprecation.** `CGDisplayStream` and its companion APIs are documented by
    Apple as deprecated and superseded by `ScreenCaptureKit` from macOS 14
@@ -61,6 +63,14 @@ forces now push for a redesign:
    structured logging, so post-hoc diagnosis from a user report is effectively
    guesswork.
 
+4. **Interactive latency.** When the virtual display hosts an interactive workload
+   such as a 3D platformer game, every frame is dirty at sustained 60 to 120 fps,
+   any frame-pacing irregularity is visible as judder during camera pans, and
+   every millisecond of capture-to-present overhead adds directly to perceived
+   input lag. The current pipeline has no defined latency budget, no newest-frame
+   wins policy, and no presentation-rate matching to the host panel; it is
+   structurally biased toward throughput averaging rather than minimum latency.
+
 ## Change Drivers
 
 * Apple's deprecation of `CGDisplayStream` and the public-API direction toward
@@ -69,6 +79,10 @@ forces now push for a redesign:
   particularly at 5120x2160 and 5120x1440.
 * Power draw on battery when DeskPad is left running idle (no dirty-frame
   suppression today).
+* Use of DeskPad as a target surface for latency-sensitive interactive content
+  (notably 3D platformer games running on the virtual display), where frame
+  pacing and end-to-end capture-to-present latency directly determine
+  playability.
 * Operational opacity: no greppable, persisted logs to diagnose failures.
 * Project owner's coding standards (small single-purpose files, hierarchical
   namespace naming, docstring with `@agents-index`, no em-dashes), which the
@@ -294,6 +308,63 @@ benchmarks defined in the Test Strategy.
     cursor responsiveness.
 13. The system **MUST NOT** assign `IOSurface` instances directly to any
     `CALayer.contents` property anywhere in the rendering pipeline.
+14. The system **MUST** operate a low-latency, newest-frame-wins queue policy
+    for interactive content: `SCStreamConfiguration.queueDepth` **MUST** be
+    set at the minimum viable value (2 to 3) and **MUST NOT** be inflated for
+    smoothing; when a newer captured `IOSurface` arrives before the prior one
+    has been presented, the prior surface **MUST** be dropped rather than
+    queued. `CAMetalLayer.maximumDrawableCount` **MUST** be set to 2 so
+    presentation cannot accumulate backlog inside the compositor.
+15. The system **MUST** enforce an explicit capture-to-present latency budget:
+    pipeline overhead beyond the inherent one-frame mirror hop **MUST** be at
+    most approximately one frame at the active refresh rate (approximately 8
+    to 16 ms across 60 to 120 Hz). The measured per-frame latency **MUST** be
+    logged through the structured logger so regressions are observable from
+    the on-disk log.
+16. The system **MUST** match presentation cadence to the capture source and
+    the host panel rather than quantizing to a fixed 60 Hz grid: on ProMotion
+    and other variable-refresh-rate displays the renderer **MUST** present at
+    the capture cadence up to the panel's maximum refresh, and
+    `SCStreamConfiguration.minimumFrameInterval` **MUST** be configured to
+    permit delivery at up to the panel's maximum refresh rate when the active
+    workload is interactive.
+17. The system **MUST** deliver judder-free frame pacing: presentation
+    scheduling **MUST** use `CAMetalDisplayLink`'s per-tick target timestamp
+    (consistent with the already-verified display-link decisions in
+    requirement 4, and noting that `CVDisplayLink` remains forbidden), so
+    presentation times are anchored to the panel's vsync grid rather than to
+    capture-callback wall-clock arrival.
+18. The system **MUST** implement adaptive mode switching between a
+    low-latency operating point (for sustained-high-rate, interactive content)
+    and a power-saving operating point (for static or document content). The
+    low-latency mode **MUST** present immediately on dirty-frame arrival with
+    shallow queues per requirement 14; the power-saving mode **MUST** gate
+    presentation on the dirty bit per requirement 5. Mode selection
+    **MUST** be automatic, based on observed sustained capture-frame arrival
+    rate, and every mode transition **MUST** be logged through the structured
+    logger.
+
+#### Trade-off note: latency mode versus power mode
+
+Requirement 5 (dirty-frame idle gating) and requirements 14 to 17
+(low-latency interactive presentation) describe two different operating
+points, not a contradiction. When captured frames arrive at a sustained high
+rate (interactive workload), the pipeline prioritizes latency: shallow
+queues, newest-frame-wins, immediate present on the next display-link tick.
+When the captured contents are largely static (document or slide workload),
+the pipeline prioritizes power: dirty-frame gating suppresses redundant GPU
+work. Both modes are first-class requirements; requirement 18 specifies that
+the switch between them is automatic and observable in the log.
+
+#### Inherent-latency caveat
+
+A mirrored virtual display always carries approximately one capture hop
+(approximately one frame) of inherent latency relative to a physical panel,
+because the source frame must be captured and re-presented. The latency
+budget in requirement 15 bounds the *additional* pipeline overhead beyond
+that hop; it does not and cannot eliminate the hop itself. Consumers of
+DeskPad for interactive workloads must treat this as a structural
+characteristic of mirrored display, not a defect.
 
 ### Non-Functional Requirements
 
@@ -387,9 +458,19 @@ benchmarks defined in the Test Strategy.
   for the simplest viewer; for a steady-state mirror at large resolutions it
   leaves performance on the table.
 * **(d) `ScreenCaptureKit` plus `AVSampleBufferDisplayLayer`.** Hands off
-  rendering to the system, but presentation pacing and dirty-frame
-  suppression are not under our control, and colorspace handling becomes
-  implicit. Rejected for the same observability reasons.
+  rendering to the system. Presentation pacing and dirty-frame suppression
+  are not under our control, and colorspace handling becomes implicit.
+  Critically for the interactive-content use case, `AVSampleBufferDisplayLayer`
+  is timestamp-driven and smoothness-first: it buffers approximately 2 to 3
+  frames internally to absorb jitter and present on schedule, which adds on
+  the order of 33 to 50 ms of input lag at 60 fps. That bias is correct for
+  video playback (where smoothness dominates and the source has fixed
+  cadence) and wrong for interactive content (where every buffered frame is
+  visible input lag). It would have been a strong candidate had DeskPad's
+  scope remained pure screen-sharing of largely static content; it is
+  rejected here because the interactive-content requirements (14 to 18) take
+  precedence and the observability gap (no control over present timing or
+  drop policy) compounds the latency cost.
 * **(e) Software composite via Core Image.** Rejected outright on
   performance and power grounds.
 
@@ -593,6 +674,10 @@ code they cover.
 | `DeskPadTests/Integration/permission_revocation_tests.swift` | `testPermissionRevocationSurfacedAfterErrorBackoff` | Verifies that when restart attempts exhaust and `CGPreflightScreenCaptureAccess` returns false, the coordinator surfaces a permission-needed state. | Stream that errors permanently; preflight returning false. | Coordinator state transitions to `.permissionRequired`. |
 | `DeskPadTests/Performance/steady_state_latency_tests.swift` | `testSteadyStateLatencyUnder33ms` (Instruments-backed manual benchmark) | Measures average capture-to-present latency across 600 frames at 4K60. | Synthetic capture source emitting at 60 Hz. | Mean latency below 33 ms. |
 | `DeskPadTests/Performance/idle_gpu_zero_tests.swift` | `testIdleProducesNoNonCompositorGPUSubmissions` (Instruments-backed manual benchmark) | Verifies zero non-compositor GPU command-buffer submissions across 5 seconds of static content. | Idle virtual display. | Submission count equals 0. |
+| `DeskPadTests/Performance/interactive_latency_budget_tests.swift` | `testCaptureToPresentBudgetWithinOneFrame` (Instruments-backed manual benchmark) | Measures per-frame additional pipeline overhead beyond the inherent capture hop across 600 frames of interactive content at 60 to 120 Hz, and asserts the structured log carries the per-frame latency measurement. | Synthetic interactive capture source emitting at the panel's active refresh rate. | Mean additional overhead at most one frame at the active refresh rate (approximately 8 to 16 ms across 60 to 120 Hz); log file contains the latency lines. |
+| `DeskPadTests/Render/newest_frame_wins_tests.swift` | `testOlderSurfaceDroppedWhenNewerArrives` | Verifies that when two captured `IOSurface`s arrive between display-link ticks, only the newest is presented and `queueDepth` plus `maximumDrawableCount` are configured at the asserted low-latency values. | Two `IOSurface`s published in quick succession to the renderer; one display-link tick. | Older surface never reaches `present`; `SCStreamConfiguration.queueDepth in {2,3}`; `CAMetalLayer.maximumDrawableCount == 2`. |
+| `DeskPadTests/Integration/adaptive_mode_switch_tests.swift` | `testAdaptiveModeSwitchOnArrivalRate` | Verifies the pipeline switches from power-saving (dirty-gated) mode to low-latency (immediate-present) mode when sustained capture-frame arrival rate crosses the threshold, and back, and that each transition is logged. | A simulated capture source that ramps from sparse static frames to sustained 60 fps and back. | Mode-transition log lines present in both directions; observed present cadence matches the active mode. |
+| `DeskPadTests/Performance/refresh_mismatch_pacing_tests.swift` | `testNoJudderAt60on120` (Instruments-backed manual benchmark) | Verifies judder-free pacing when a 60 fps interactive source is presented on a 120 Hz ProMotion panel using `CAMetalDisplayLink` target timestamps. | Synthetic 60 fps source; host pacer at 120 Hz. | Presented frame intervals align to the panel vsync grid at source cadence; no systematic judder pattern detected; no `CVDisplayLink` instance constructed. |
 
 ### Tests to Modify
 
@@ -708,7 +793,46 @@ When the file is inspected
 Then the file contains zero U+2014 EM DASH characters and zero U+2013 EN DASH characters used as dashes
 ```
 
-### AC-12: Small single-purpose files with @agents-index
+### AC-13: Capture-to-present latency budget is met
+
+```gherkin
+Given DeskPad is mirroring interactive content at the host panel's active refresh rate (60 to 120 Hz)
+When 600 consecutive frames are measured from capture timestamp to presentation timestamp
+Then the mean additional pipeline overhead beyond the inherent one-frame mirror hop is at most one frame at the active refresh rate (approximately 8 to 16 ms across 60 to 120 Hz)
+  And the per-frame latency measurement is emitted to the structured log
+```
+
+### AC-14: Newest-frame-wins under sustained load
+
+```gherkin
+Given the capture subsystem is delivering frames faster than the renderer can present them
+When two captured IOSurfaces arrive between consecutive display-link ticks
+Then the older IOSurface is dropped and not presented
+  And SCStreamConfiguration.queueDepth is configured at 2 or 3
+  And CAMetalLayer.maximumDrawableCount is configured at 2
+```
+
+### AC-15: Adaptive mode switching is automatic and logged
+
+```gherkin
+Given DeskPad transitions from a static document workload to a sustained-high-rate interactive workload
+When the observed capture-frame arrival rate crosses the sustained-rate threshold
+Then the pipeline switches from power-saving (dirty-gated) mode to low-latency (immediate-present) mode without user action
+  And the mode transition is recorded in the structured log
+  And the reverse transition occurs when the workload returns to static
+```
+
+### AC-16: Judder-free pacing at refresh-rate mismatch
+
+```gherkin
+Given a 60 fps interactive source is captured to a 120 Hz ProMotion host panel
+When 600 consecutive presentations are measured against the CAMetalDisplayLink target timestamps
+Then no systematic judder pattern is observed (presented frame intervals match the source cadence aligned to the panel vsync grid)
+  And presentation scheduling uses CAMetalDisplayLink per-tick target timestamps
+  And no CVDisplayLink instance exists in the running process
+```
+
+### AC-17: Small single-purpose files with @agents-index
 
 ```gherkin
 Given any Swift file introduced by this change
