@@ -34,13 +34,17 @@ DeskPad's purpose is to expose a virtual display as an ordinary mirrored window 
 presenter can share a smaller workspace. The current implementation works, but three
 forces now push for a redesign:
 
-1. **Deprecation.** `CGDisplayStream` and its companion APIs have been marked
-   deprecated in macOS 14 and later. Continuing on the legacy API is a known
-   reliability liability: future macOS releases may remove or further restrict it,
-   and the bug surface (permission revocation handling, configuration changes, error
-   recovery) is already minimal. `ScreenCaptureKit` (`SCStream`) is Apple's
-   supported successor and provides a cleaner permission, filtering, and
-   reconfiguration model.
+1. **Deprecation.** `CGDisplayStream` and its companion APIs are documented by
+   Apple as deprecated and superseded by `ScreenCaptureKit` from macOS 14
+   onward. (As of the macOS 26.5 SDK shipped with Xcode, the
+   `CGDisplayStream.h` header itself does not yet carry an
+   `API_DEPRECATED` annotation, but the developer.apple.com reference and
+   release notes flag it as deprecated; future releases are expected to
+   complete the deprecation in the header.) Continuing on the legacy API is a
+   known reliability liability: the bug surface (permission revocation
+   handling, configuration changes, error recovery) is already minimal.
+   `ScreenCaptureKit` (`SCStream`) is Apple's supported successor and provides
+   a cleaner permission, filtering, and reconfiguration model.
 
 2. **Performance and power efficiency.** Frames are delivered on `DispatchQueue.main`
    and assigned to a `CALayer`'s `contents` from the main thread. Every layout pass,
@@ -114,13 +118,19 @@ separated into small, single-purpose files:
    capture queue. A custom `SCStreamOutput` extracts the `IOSurface` reference
    without copying pixel data.
 
-2. **Render.** A `CAMetalLayer` hosted in the window's content view, configured
-   with `framebufferOnly = false` is unnecessary; we use a trivial textured-quad
-   render pipeline that samples a `MTLTexture` created from the captured
-   `IOSurface` via `MTLDevice.makeTexture(descriptor:iosurface:plane:)`. A
-   `CADisplayLink` drives present pacing and adapts to the host display's
-   refresh rate, including ProMotion. Presentation is gated by a dirty flag set
-   by the capture callback so steady-state idle frames are skipped.
+2. **Render.** A `CAMetalLayer` hosted in the window's content view (default
+   `framebufferOnly = true` is retained because we only present, never read
+   back); we use a trivial textured-quad render pipeline that samples a
+   `MTLTexture` created from the captured `IOSurface` via
+   `MTLDevice.makeTexture(descriptor:iosurface:plane:)`. A `CADisplayLink`
+   obtained from the host view via the macOS 14+
+   `NSView.displayLink(target:selector:)` API drives present pacing and adapts
+   to the host display's refresh rate, including ProMotion. (Equivalents on
+   `NSWindow` and `NSScreen` exist; `CVDisplayLink` is deprecated as of
+   macOS 15.0 with the documented replacement
+   `NSView/NSWindow/NSScreen.displayLink(target:selector:)`.) Presentation
+   is gated by a dirty flag set by the capture callback so steady-state idle
+   frames are skipped.
 
 3. **Lifecycle and reliability.** An owning coordinator handles permission
    prompts, stream restart on `SCStreamDelegate.stream(_:didStopWithError:)`,
@@ -163,21 +173,29 @@ If backwards compatibility were not a constraint, the architecturally cleanest
 DeskPad rewrite would look like this:
 
 * **Minimum deployment macOS 14.0**, ideally 15.0, so `ScreenCaptureKit`'s mature
-  surface (including configurable presenter overlays, content-filter exclusion,
-  and `SCStreamConfiguration.captureResolution`) is fully available. The
-  Info.plist and Xcode project `MACOSX_DEPLOYMENT_TARGET` are bumped accordingly.
+  surface is fully available. Specifically, `SCStreamConfiguration` gains
+  `presenterOverlayPrivacyAlertSetting`, `captureResolution`
+  (`SCCaptureResolutionType`), `ignoreShadowsDisplay`, `shouldBeOpaque`, and
+  `streamName` on macOS 14; and `captureDynamicRange`
+  (`SCCaptureDynamicRange`), `showMouseClicks`, `captureMicrophone`, and the
+  `+streamConfigurationWithPreset:` factory on macOS 15. The Xcode project
+  `MACOSX_DEPLOYMENT_TARGET` and the relevant `INFOPLIST_KEY_*` build
+  settings (the project uses `GENERATE_INFOPLIST_FILE = YES`) are bumped
+  accordingly.
 * **`CGDisplayStream` removed entirely**, along with any conditional
   branching, so there is one capture path with one set of failure modes.
 * **Swift 6 with strict concurrency.** The capture pipeline becomes an
   `actor`-isolated subsystem; the renderer is a `@MainActor` consumer reading
   a sendable `IOSurface` handle through an atomic property. Compile-time data
   race elimination collapses an entire category of latent bugs.
-* **Metal 3 only.** `MTLBindlessTexture`-style argument buffers and
-  `MTLResidencySet` are not strictly needed for a single-quad blit, but locking
-  to Metal 3 means we can use `MTLEvent`-based synchronization with the
-  `IOSurface` producer, modern `MTLDevice.makeTexture(descriptor:iosurface:)`
-  patterns, and `CAMetalDisplayLink` (macOS 14 plus) for tighter display-link
-  integration than `CADisplayLink`.
+* **Metal 3 only.** Argument buffers and `MTLResidencySet` are not strictly
+  needed for a single-quad blit, but locking to Metal 3 means we can use
+  `MTLEvent`-based synchronization with the `IOSurface` producer, the modern
+  `MTLDevice.makeTexture(descriptor:iosurface:plane:)` constructor, and
+  `CAMetalDisplayLink` (macOS 14 and later, see
+  `QuartzCore/CAMetalDisplayLink.h`) which delivers a drawable and target
+  timestamp per tick, eliminating the `nextDrawable` + manual present-time
+  computation that bare `CADisplayLink` requires.
 * **ReSwift removed from the hot path.** The rendering subsystem becomes
   self-contained and observes display configuration via Combine or
   `AsyncSequence` directly; ReSwift continues to model UI-shell state, but
@@ -223,10 +241,15 @@ benchmarks defined in the Test Strategy.
 3. The system **MUST** present captured frames through a `CAMetalLayer`
    hosted in the screen view, using a Metal render pipeline that samples a
    `MTLTexture` created zero-copy from the captured `IOSurface`.
-4. The system **MUST** pace presentation with `CADisplayLink` (or
-   `CAMetalDisplayLink` on macOS 14 and later) bound to the window's host
-   `NSScreen`, including correct behaviour when the window moves between
-   displays with different refresh rates.
+4. The system **MUST** pace presentation with a `CADisplayLink` obtained
+   from the host `NSView` via `displayLink(target:selector:)` (macOS 14+),
+   or equivalently from `NSWindow` or `NSScreen` via the same selector. The
+   system **MUST NOT** use `CVDisplayLink` (deprecated as of macOS 15.0,
+   `CoreVideo/CVDisplayLink.h`). `CAMetalDisplayLink`
+   (`QuartzCore/CAMetalDisplayLink.h`, macOS 14+) **MAY** be substituted
+   when tighter drawable-targeted pacing is desired. The pacer **MUST**
+   continue to behave correctly when the window moves between displays
+   with different refresh rates.
 5. The system **MUST** skip presentation cycles when no new captured frame has
    arrived since the last present (a "dirty bit" gate), so an idle virtual
    display causes no GPU work beyond compositor minima.
@@ -244,10 +267,20 @@ benchmarks defined in the Test Strategy.
    only while the stream is in an error state, never during steady-state
    capture) and prompt the user to re-grant via
    `CGRequestScreenCaptureAccess`.
-9. The system **MUST** recover from Metal device loss
-   (`MTLCommandBuffer.error` containing `MTLCommandBufferError.deviceLost`)
-   by acquiring a new `MTLDevice` via `MTLCreateSystemDefaultDevice()` and
-   rebuilding the render pipeline state without restarting the application.
+9. The system **MUST** recover from Metal device loss by inspecting
+   `MTLCommandBuffer.error` after completion and acting when its
+   `MTLCommandBufferErrorDomain` code is one of the device-loss-class values
+   defined by `MTLCommandBufferError`, specifically
+   `MTLCommandBufferError.deviceRemoved` (Obj-C
+   `MTLCommandBufferErrorDeviceRemoved`, macOS 10.13+),
+   `MTLCommandBufferError.accessRevoked`
+   (`MTLCommandBufferErrorAccessRevoked`), or
+   `MTLCommandBufferError.notPermitted`
+   (`MTLCommandBufferErrorNotPermitted`); on any such code the system
+   **MUST** acquire a new `MTLDevice` via `MTLCreateSystemDefaultDevice()`
+   and rebuild the render pipeline state without restarting the
+   application. (Note: there is no `MTLCommandBufferError.deviceLost` case
+   in `MTLCommandBuffer.h`; the macOS-correct symbol is `deviceRemoved`.)
 10. The system **MUST** log every state transition of the capture and render
     subsystems through `os.Logger` and additionally tee structured log lines
     to a rotating file under `~/Library/Logs/DeskPad/`, with each line tagged
@@ -297,8 +330,12 @@ benchmarks defined in the Test Strategy.
   list)
 * `DeskPad.entitlements` (verified to keep `com.apple.security.app-sandbox`
   and add any `ScreenCaptureKit`-specific entitlements if needed at runtime)
-* `Info.plist` (add `NSScreenCaptureUsageDescription` and bump deployment
-  target)
+* The DeskPad target's Info.plist (the project sets
+  `GENERATE_INFOPLIST_FILE = YES`, so this is expressed as the
+  `INFOPLIST_KEY_NSScreenCaptureUsageDescription` build setting in
+  `DeskPad.xcodeproj/project.pbxproj`); deployment target bump
+  (`MACOSX_DEPLOYMENT_TARGET = 14.0` in the same build settings,
+  currently `13.0`)
 * `README.md` (troubleshooting section updated to reflect the new
   permission flow)
 
@@ -381,7 +418,9 @@ benchmarks defined in the Test Strategy.
 * New external dependency: `ScreenCaptureKit.framework` and `Metal.framework`
   (Metal is already implicitly linked through AppKit).
 * New runtime behaviour around permission prompts requires the
-  `NSScreenCaptureUsageDescription` key in `Info.plist`.
+  `NSScreenCaptureUsageDescription` Info.plist key, supplied via the
+  `INFOPLIST_KEY_NSScreenCaptureUsageDescription` build setting because the
+  project uses `GENERATE_INFOPLIST_FILE = YES`.
 
 ### Business Impact
 
@@ -432,9 +471,11 @@ changes yet. The captured `IOSurface` is logged but not displayed.
    owns the `SCStream` lifecycle (start, stop, reconfigure, restart with
    exponential backoff).
 
-**Affected components:** new `DeskPad/Backend/Capture/` directory,
-`Info.plist` (add `NSScreenCaptureUsageDescription`), project deployment
-target raised to macOS 14.0.
+**Affected components:** new `DeskPad/Backend/Capture/` directory; the
+`INFOPLIST_KEY_NSScreenCaptureUsageDescription` build setting added to the
+DeskPad target in `DeskPad.xcodeproj/project.pbxproj` (the project uses
+`GENERATE_INFOPLIST_FILE = YES` so there is no source-tree `Info.plist`);
+project `MACOSX_DEPLOYMENT_TARGET` raised from `13.0` to `14.0`.
 
 ### Phase 3: Render Subsystem
 
@@ -450,9 +491,14 @@ existing `CGDisplayStream` path remains the default.
 3. Add `Backend/Render/render.blit_pipeline.swift`: the textured-quad render
    pipeline state, vertex and fragment shaders, and a `draw(into:from:)`
    entry point.
-4. Add `Backend/Render/render.display_link_pacer.swift`: a wrapper around
-   `CADisplayLink` (or `CAMetalDisplayLink` when available) that calls a
-   closure once per refresh, gated by a `Bool` dirty flag.
+4. Add `Backend/Render/render.display_link_pacer.swift`: a wrapper that
+   obtains a `CADisplayLink` from the host view via
+   `NSView.displayLink(target:selector:)` (macOS 14+; equivalents on
+   `NSWindow` and `NSScreen` exist) and calls a closure once per refresh,
+   gated by a `Bool` dirty flag. The pacer **MUST NOT** use the deprecated
+   `CVDisplayLink` API. `CAMetalDisplayLink` (macOS 14+) **MAY** be
+   substituted later for tighter integration with the `CAMetalLayer`'s
+   drawable acquisition.
 5. Add `Backend/Render/render.device_loss_recovery.swift`: a small utility
    that observes command-buffer errors and rebuilds the device and pipeline
    on `deviceLost`.
@@ -542,7 +588,7 @@ code they cover.
 | `DeskPadTests/Capture/stream_coordinator_restart_tests.swift` | `testRestartBackoffSchedule` | Verifies bounded exponential backoff (caps at 5 s, max 10 attempts). | A coordinator with an injected clock and a stream that errors immediately. | Restart attempts occur at 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 5.0, 5.0, 5.0, 5.0 seconds; eleventh restart never fires. |
 | `DeskPadTests/Render/iosurface_texture_cache_tests.swift` | `testCacheReusesTextureForSameSurface` | Verifies the cache returns the same `MTLTexture` for two lookups of the same `IOSurface`. | Two lookups against one `IOSurface`. | Identical `MTLTexture` instance. |
 | `DeskPadTests/Render/display_link_pacer_tests.swift` | `testSkipsPresentWhenNotDirty` | Verifies the pacer's callback is invoked but skips presentation when the dirty flag is false. | A pacer driven by a fake tick source; dirty flag false. | Zero `present` calls observed across 60 ticks. |
-| `DeskPadTests/Render/device_loss_recovery_tests.swift` | `testRebuildsPipelineOnDeviceLost` | Verifies the recovery utility constructs a new pipeline state when a `MTLCommandBufferError.deviceLost` is observed. | A synthetic command buffer error. | New pipeline state object distinct from the prior one. |
+| `DeskPadTests/Render/device_loss_recovery_tests.swift` | `testRebuildsPipelineOnDeviceLost` | Verifies the recovery utility constructs a new pipeline state when a `MTLCommandBufferError.deviceRemoved` (or `.accessRevoked` / `.notPermitted`) is observed on a completed command buffer. | A synthetic command buffer error in `MTLCommandBufferErrorDomain` with one of the device-loss-class codes. | New pipeline state object distinct from the prior one. |
 | `DeskPadTests/Integration/coordinator_reconfigure_tests.swift` | `testReconfigureOnResolutionChange` | Verifies the coordinator calls `SCStream.updateConfiguration` on resolution change rather than restarting. | A coordinator with a stub stream; dispatched `ScreenConfigurationAction.set` event. | One `updateConfiguration` call, zero `stopCapture`/`startCapture` calls. |
 | `DeskPadTests/Integration/permission_revocation_tests.swift` | `testPermissionRevocationSurfacedAfterErrorBackoff` | Verifies that when restart attempts exhaust and `CGPreflightScreenCaptureAccess` returns false, the coordinator surfaces a permission-needed state. | Stream that errors permanently; preflight returning false. | Coordinator state transitions to `.permissionRequired`. |
 | `DeskPadTests/Performance/steady_state_latency_tests.swift` | `testSteadyStateLatencyUnder33ms` (Instruments-backed manual benchmark) | Measures average capture-to-present latency across 600 frames at 4K60. | Synthetic capture source emitting at 60 Hz. | Mean latency below 33 ms. |
@@ -595,7 +641,8 @@ Then the view's backing layer is a CAMetalLayer
 Given DeskPad is mirroring on a ProMotion display configured for variable refresh
 When the host display advertises a 120 Hz refresh rate
 Then the rendering pipeline presents at up to 120 Hz
-  And presentation is driven by CADisplayLink or CAMetalDisplayLink, not by capture callbacks
+  And presentation is driven by a CADisplayLink obtained from NSView/NSWindow/NSScreen.displayLink(target:selector:) (or, optionally, CAMetalDisplayLink), not by capture callbacks
+  And no CVDisplayLink instance exists in the running process
 ```
 
 ### AC-5: Idle frames are suppressed
@@ -627,9 +674,11 @@ Then the coordinator transitions to a permissionRequired state
 ### AC-8: GPU device loss is recovered
 
 ```gherkin
-Given the renderer observes MTLCommandBufferError.deviceLost
+Given the renderer observes a completed MTLCommandBuffer whose error.code is
+      MTLCommandBufferError.deviceRemoved, .accessRevoked, or .notPermitted
 When the device-loss recovery utility is invoked
-Then a new MTLDevice is acquired and the pipeline state is rebuilt
+Then a new MTLDevice is acquired via MTLCreateSystemDefaultDevice()
+  And the pipeline state is rebuilt
   And mirroring resumes without restarting the application
 ```
 
@@ -844,3 +893,38 @@ into small testable units that the project owner's coding standards require.
   https://developer.apple.com/documentation/quartzcore/cametaldisplaylink
 * DeskPad current pipeline reference:
   `DeskPad/Frontend/Screen/ScreenViewController.swift`
+
+<!-- review-summary -->
+**Reviewer pass (Apple-SDK verification, macOS 26.5 SDK / Xcode current):**
+
+Findings:
+- API correctness: 1 (incorrect symbol `MTLCommandBufferError.deviceLost` — does not exist in `Metal/MTLCommandBuffer.h`; macOS-correct symbol is `MTLCommandBufferError.deviceRemoved` / `MTLCommandBufferErrorDeviceRemoved`).
+- Modernization: 2 (display-link API choice did not name the macOS 14+ `NSView.displayLink(target:selector:)` family or call out that `CVDisplayLink` is deprecated as of macOS 15.0; `SCStreamConfiguration.captureResolution` referenced as a "resolution knob" rather than the enum-typed `SCCaptureResolutionType` property).
+- Drift: 1 (the project uses `GENERATE_INFOPLIST_FILE = YES`, so there is no source-tree `Info.plist`; the CR's "add `NSScreenCaptureUsageDescription` to `Info.plist`" must be expressed as `INFOPLIST_KEY_NSScreenCaptureUsageDescription` in the Xcode build settings; current `MACOSX_DEPLOYMENT_TARGET = 13.0`).
+- Accuracy nit: 1 (`CGDisplayStream.h` in macOS 26.5 SDK carries no `API_DEPRECATED` annotation despite documentation listing it as deprecated; original CR wording over-claimed header-level deprecation).
+
+Fixes applied (in-CR edits):
+- Requirement #9 and AC-8 rewritten to use `MTLCommandBufferError.deviceRemoved` (and added the related `.accessRevoked` / `.notPermitted` device-loss-class codes per `MTLCommandBuffer.h` enum); added explicit note that `.deviceLost` does not exist.
+- Tests-to-add row for `device_loss_recovery_tests.swift` updated to match.
+- Requirement #4, Proposed Change "Render" paragraph, Phase 3 step 4, and AC-4 updated to specify obtaining the `CADisplayLink` from `NSView/NSWindow/NSScreen.displayLink(target:selector:)` (macOS 14+) and to forbid `CVDisplayLink` (deprecated as of macOS 15.0, per `CoreVideo/CVDisplayLink.h` `API_DEPRECATED_BEGIN`).
+- Greenfield section's `SCStreamConfiguration.captureResolution` reference rewritten with accurate symbol set (the macOS 14 additions `captureResolution`, `presenterOverlayPrivacyAlertSetting`, `ignoreShadowsDisplay`, `shouldBeOpaque`, `streamName`, `preservesAspectRatio` and the macOS 15 additions `captureDynamicRange`, `showMouseClicks`, `captureMicrophone`, `+streamConfigurationWithPreset:`).
+- Greenfield's `CAMetalDisplayLink` reference grounded in `QuartzCore/CAMetalDisplayLink.h` (macOS 14+) with the actual reason it is preferable (drawable + target timestamp per tick).
+- Affected Components, Phase 2, and Technical Impact updated to reference `INFOPLIST_KEY_NSScreenCaptureUsageDescription` and the existing `GENERATE_INFOPLIST_FILE = YES` build setting; deployment target bump expressed as the literal `MACOSX_DEPLOYMENT_TARGET` setting change from `13.0` to `14.0` (verified in `DeskPad.xcodeproj/project.pbxproj` lines 315 and 371).
+- Motivation paragraph on deprecation softened to match the SDK reality (header not yet annotated; deprecation is documentation-level).
+
+Verified OK (no edits required):
+- `SCStream`, `SCContentFilter(display:excludingWindows:)`, `SCStreamConfiguration` (width, height, minimumFrameInterval, pixelFormat, queueDepth, showsCursor, scalesToFit, colorSpaceName, captureDynamicRange), `SCStreamDelegate.stream(_:didStopWithError:)`, `SCStream.updateConfiguration(_:completionHandler:)`, `SCStream.updateContentFilter(_:completionHandler:)`, `SCStreamOutput.stream(_:didOutputSampleBuffer:ofType:)`, `SCStreamOutputType.screen`, `SCShareableContent.current.displays`, `SCDisplay.displayID` — all present in `ScreenCaptureKit.framework/.../SCStream.h` and `SCShareableContent.h`.
+- `CGPreflightScreenCaptureAccess` / `CGRequestScreenCaptureAccess` — present in `CoreGraphics/CGWindow.h` at lines 295 and 298 (macOS 10.15+).
+- `CVPixelBufferGetIOSurface` — present in `CoreVideo/CVPixelBufferIOSurface.h:62`.
+- `kCVPixelFormatType_32BGRA` — present in `CoreVideo/CVPixelBuffer.h:56` (`'BGRA'`).
+- `MTLDevice.makeTexture(descriptor:iosurface:plane:)` — present (`MTLDevice.h:709`, Swift name confirmed in `Metal.apinotes:987`).
+- `MTLCreateSystemDefaultDevice()` — present (`MTLDevice.h:130`, macOS 10.11+).
+- `CAMetalLayer.framebufferOnly` — present (`QuartzCore/CAMetalLayer.h:87`).
+- `NSApplication.didChangeScreenParametersNotification` — confirmed in `AppKit.apinotes:8792`.
+- `NSView/NSWindow/NSScreen.displayLink(target:selector:)` — present at `NSView.h:616`, `NSWindow.h:825`, `NSScreen.h:134`, all macOS 14.0+.
+- `CADisplayLink` — `QuartzCore/CADisplayLink.h:19` `API_AVAILABLE(macos(14.0))`.
+- `CAMetalDisplayLink` — `QuartzCore/CAMetalDisplayLink.h:33` `API_AVAILABLE(macos(14.0))`.
+- `CVDisplayLink` — `CoreVideo/CVDisplayLink.h:51` `API_DEPRECATED_BEGIN("use NSView.displayLink(target:selector:)...", macos(10.4, 15.0))`. The CR now correctly forbids its use.
+
+Unresolved: none. The CR's API surface is now self-consistent with the macOS 26.5 SDK headers.
+<!-- /review-summary -->
