@@ -1,13 +1,13 @@
 ---
 name: cr-avsamplebufferdisplaylayer-backend
-description: Add an opt-in AVSampleBufferDisplayLayer presentation backend alongside the Metal/CAMetalLayer pipeline from CR-0001, selectable via a persisted user preference, for the screen-sharing and static-content use case where system video pipeline power efficiency outweighs interactive latency.
+description: Add an opt-in AVSampleBufferDisplayLayer presentation backend alongside the Metal/CAMetalLayer pipeline from CR-0001 (macOS 15.0, Swift 6 strict concurrency, Metal 3 baseline), selectable via a persisted user preference, for the screen-sharing and static-content use case where system video pipeline power efficiency outweighs interactive latency.
 id: "CR-0002"
 status: "draft"
 date: 2026-06-04
 requestor: desek
 stakeholders:
   - DeskPad maintainers (Stengo)
-  - End users on macOS 14 and later who use DeskPad for screen-sharing or document mirroring
+  - End users on macOS 15 and later who use DeskPad for screen-sharing or document mirroring
 priority: "medium"
 target-version: "next-major+1"
 source-branch: cr/gpu-rendering
@@ -20,18 +20,26 @@ source-commit: 41ad155
 
 This CR is written against the assumption that **CR-0001
 (`docs/cr/CR-0001-gpu-rendering-pipeline.md`) has been implemented exactly per
-its proposed specification**: the `CGDisplayStream` path is gone, capture runs
-on a dedicated background queue via `SCStream` against an `SCContentFilter`
-built from the virtual display's `CGDirectDisplayID`, the `SCStreamOutput`
+its proposed specification** on a macOS 15.0 / Swift 6 strict concurrency
+(`SWIFT_STRICT_CONCURRENCY = complete`) / Metal 3 baseline with no legacy
+`CGDisplayStream` path and no feature flag: the `CGDisplayStream` path is
+gone, capture runs on a dedicated background queue via `SCStream` against an
+`SCContentFilter` built from the virtual display's `CGDirectDisplayID`, the
+capture pipeline is an `actor`-isolated subsystem, the `SCStreamOutput`
 publishes `IOSurface`-backed `CMSampleBuffer`s, a `CAMetalLayer`-hosted
-renderer presents them via a `CADisplayLink` obtained from
-`NSView/NSWindow/NSScreen.displayLink(target:selector:)` (macOS 14+) with
-dirty-frame gating, adaptive latency-versus-power mode switching is in place,
-and structured logging is teed to `~/Library/Logs/DeskPad/deskpad.log` with
+`@MainActor` renderer presents them via a `CADisplayLink` obtained from
+`NSView/NSWindow/NSScreen.displayLink(target:selector:)` with dirty-frame
+gating, adaptive latency-versus-power mode switching is in place, and
+structured logging is teed to `~/Library/Logs/DeskPad/deskpad.log` with
 `filename:line` tagging. CR-0002 builds on that architecture and does not
 re-specify any of it. Where this CR refers to "the capture subsystem", "the
 render subsystem", "the coordinator", "the structured logger", or "the
-adaptive mode controller", those are the artefacts CR-0001 delivers.
+adaptive mode controller", those are the artefacts CR-0001 delivers. The
+deployment target (`MACOSX_DEPLOYMENT_TARGET = 15.0`), `SWIFT_VERSION = 6.0`,
+and `SWIFT_STRICT_CONCURRENCY = complete` settings established by CR-0001
+are inherited unchanged by this CR; no `@available(macOS 14, *)` guards are
+needed for the AVFoundation symbols this CR uses, even though they are
+documented as macOS 14+ availability.
 
 ## Change Summary
 
@@ -39,9 +47,10 @@ Introduce a second presentation backend based on `AVSampleBufferDisplayLayer`
 plus its modern `AVSampleBufferVideoRenderer` (the `sampleBufferRenderer`
 property, macOS 14+), selectable at runtime via a persisted user preference.
 The capture subsystem from CR-0001 is refactored behind a small
-`PresentationBackend` protocol so its `CMSampleBuffer` output can be handed
-to either the existing Metal backend (default) or the new
-`AVSampleBufferDisplayLayer` backend. The switch takes effect on the live
+`PresentationBackend` protocol (Swift 6 strict-concurrency compliant; see
+the isolation notes in the Backend Protocol section) so its
+`CMSampleBuffer` output can be handed to either the existing Metal backend
+(default) or the new `AVSampleBufferDisplayLayer` backend. The switch takes effect on the live
 stream without an app restart by tearing down one backend and bringing up the
 other while the capture pipeline keeps running. The Metal backend remains the
 default and the documented choice for interactive and gaming content; the new
@@ -174,7 +183,23 @@ it through a menu item; switch takes effect live without an app restart.
 
 `Backend/Render/render.presentation_backend.swift` declares the protocol
 both backends conform to. The protocol is intentionally minimal so the
-capture subsystem stays backend-agnostic per Dependency Inversion:
+capture subsystem stays backend-agnostic per Dependency Inversion.
+
+**Strict-concurrency isolation.** Per CR-0001's Swift 6 strict-concurrency
+baseline (`SWIFT_STRICT_CONCURRENCY = complete`), `PresentationBackend` is
+declared `@MainActor` and inherits `AnyObject`. Backends own their
+`NSView`-rooted host and any `CALayer` state, which is main-actor-only by
+AppKit/QuartzCore contract. The `enqueue(_:)` method is the one
+cross-actor hop: it is called from the capture subsystem's dedicated
+background queue and **MUST** be invoked as `await backend.enqueue(buffer)`
+(or a `MainActor.assumeIsolated` equivalent in a callback context).
+`CMSampleBuffer` carries the immutable owned-reference semantics CR-0001
+established at publication, so it is safe to pass across the actor
+boundary. Backend implementations are `final class` types annotated
+`@MainActor`. `PresentationBackendDiagnostics` is a `Sendable` struct so
+it can be read by the adaptive mode controller from off-main contexts.
+
+The protocol members:
 
 * `func configure(displaySize: CGSize, scaleFactor: CGFloat) throws`,
   which prepares the backend for a given output resolution. Called on
@@ -219,8 +244,9 @@ macOS 15.0 / iOS 18.0 (`AVSampleBufferDisplayLayer.h` lines 94, 103, 110,
 direct callers to `sampleBufferRenderer`) and **MUST NOT** be used.
 `sampleBufferRenderer` is declared at
 `AVSampleBufferDisplayLayer.h:303` with
-`API_AVAILABLE(macos(14.0), ios(17.0), tvos(17.0), visionos(1.0))`, which
-matches CR-0001's macOS 14.0 deployment target.
+`API_AVAILABLE(macos(14.0), ios(17.0), tvos(17.0), visionos(1.0))`; this
+availability is satisfied unconditionally by CR-0001's macOS 15.0
+deployment target, so no `@available` guard is required.
 
 Key design points:
 
@@ -363,11 +389,20 @@ flowchart TD
    the properties `hostView: NSView` and
    `diagnostics: PresentationBackendDiagnostics`, such that both the Metal
    and `AVSampleBufferDisplayLayer` backends conform to it without
-   downcasts.
+   downcasts. The protocol **MUST** be `@MainActor`-isolated and inherit
+   `AnyObject`, both backend implementations **MUST** be `final class`
+   types annotated `@MainActor`, and `PresentationBackendDiagnostics`
+   **MUST** be a `Sendable` value type, so the entire surface compiles
+   under `SWIFT_STRICT_CONCURRENCY = complete` without warnings.
 
 2. The capture-to-backend interface **MUST** be `CMSampleBuffer` (the
    buffer the `SCStreamOutput` already publishes). The capture subsystem
-   **MUST NOT** be aware of which backend is active.
+   **MUST NOT** be aware of which backend is active. The cross-actor
+   hand-off from the capture subsystem's background queue to the
+   `@MainActor` backend **MUST** use `await backend.enqueue(buffer)` (or
+   the equivalent `MainActor.assumeIsolated` form in a callback context),
+   consistent with CR-0001's `actor`-isolated capture and `@MainActor`
+   renderer split.
 
 3. The system **MUST** persist the selected backend in `UserDefaults`
    under the key `DeskPad.presentationBackend` with the string values
@@ -607,8 +642,8 @@ flowchart TD
   methods (`enqueueSampleBuffer:`, `status`, `error`, `flush`).**
   Rejected: deprecated as of macOS 15.0 per `AVSampleBufferDisplayLayer.h`
   lines 94, 103, 110, 139, 148, 158, 168, 194, 212, 219, 226; the modern
-  `sampleBufferRenderer` path is available unconditionally on macOS 14,
-  which is CR-0001's minimum deployment target.
+  `sampleBufferRenderer` path (`API_AVAILABLE(macos(14.0))`) is satisfied
+  unconditionally by CR-0001's `MACOSX_DEPLOYMENT_TARGET = 15.0`.
 * **(e) Build a third intermediate backend that pre-decodes through
   VideoToolbox.** Rejected: the captured frames are already raw BGRA
   `IOSurface`s; introducing a VideoToolbox stage adds an encode-decode
@@ -1030,10 +1065,10 @@ Then the file contains zero U+2014 EM DASH characters and zero U+2013 EN DASH ch
 
 ### Build & Compilation
 
-- [ ] Code compiles with Xcode against the macOS 14.0 deployment target without errors
+- [ ] Code compiles with Xcode against the macOS 15.0 deployment target (inherited from CR-0001) without errors
 - [ ] No new compiler warnings introduced
 - [ ] No deprecation warnings for any `AVSampleBufferDisplayLayer` API surface used (all enqueue, flush, status, error paths go through `sampleBufferRenderer`)
-- [ ] Swift concurrency warnings under `-strict-concurrency=complete` reviewed
+- [ ] Compiles cleanly under `SWIFT_VERSION = 6.0` with `SWIFT_STRICT_CONCURRENCY = complete` (CR-0001 baseline); the `PresentationBackend` protocol is `@MainActor` and the cross-actor `enqueue(_:)` hop from the capture subsystem is `await`-invoked
 
 ### Linting & Code Style
 
@@ -1149,9 +1184,10 @@ one stale frame for one tick.
 
 ## Dependencies
 
-* `AVFoundation.framework` (system, macOS 14.0+ for the
-  `sampleBufferRenderer` path per `AVSampleBufferDisplayLayer.h:295`,
-  `AVSampleBufferVideoRenderer.h:29`)
+* `AVFoundation.framework` (system; the `sampleBufferRenderer` path is
+  declared `API_AVAILABLE(macos(14.0), ...)` per
+  `AVSampleBufferDisplayLayer.h:295` and `AVSampleBufferVideoRenderer.h:29`,
+  which is satisfied unconditionally by CR-0001's `MACOSX_DEPLOYMENT_TARGET = 15.0`)
 * `CoreMedia.framework` (system, already linked transitively from
   CR-0001 via `ScreenCaptureKit`)
 * Everything CR-0001 already requires: `ScreenCaptureKit.framework`,
