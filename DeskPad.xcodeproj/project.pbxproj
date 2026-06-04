@@ -22,6 +22,9 @@
 		6DC044522801877F00281728 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC044512801877F00281728 /* AppDelegate.swift */; };
 		6DC044562801878100281728 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6DC044552801878100281728 /* Assets.xcassets */; };
 		6DC04461280191EB00281728 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC04460280191EB00281728 /* main.swift */; };
+		7A00000000000000000A0004 /* agents.log.logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000A0002 /* agents.log.logger.swift */; };
+		7A00000000000000000A0005 /* agents.log.file_sink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000A0003 /* agents.log.file_sink.swift */; };
+		7A00000000000000000B0006 /* log_format_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000B0005 /* log_format_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +46,10 @@
 		6DC044552801878100281728 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6DC0445A2801878100281728 /* DeskPad.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DeskPad.entitlements; sourceTree = "<group>"; };
 		6DC04460280191EB00281728 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		7A00000000000000000A0002 /* agents.log.logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = agents.log.logger.swift; sourceTree = "<group>"; };
+		7A00000000000000000A0003 /* agents.log.file_sink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = agents.log.file_sink.swift; sourceTree = "<group>"; };
+		7A00000000000000000B0002 /* DeskPadTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DeskPadTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A00000000000000000B0005 /* log_format_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = log_format_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,6 +58,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				6D2F1482280C1F9200A3A2E5 /* ReSwift in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A00000000000000000B0008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -116,6 +130,7 @@
 			isa = PBXGroup;
 			children = (
 				6DC044502801877F00281728 /* DeskPad */,
+				7A00000000000000000B0003 /* DeskPadTests */,
 				6DC0444F2801877F00281728 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -124,8 +139,34 @@
 			isa = PBXGroup;
 			children = (
 				6DC0444E2801877F00281728 /* DeskPad.app */,
+				7A00000000000000000B0002 /* DeskPadTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		7A00000000000000000A0001 /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				7A00000000000000000A0002 /* agents.log.logger.swift */,
+				7A00000000000000000A0003 /* agents.log.file_sink.swift */,
+			);
+			path = Logging;
+			sourceTree = "<group>";
+		};
+		7A00000000000000000B0003 /* DeskPadTests */ = {
+			isa = PBXGroup;
+			children = (
+				7A00000000000000000B0004 /* Logging */,
+			);
+			path = DeskPadTests;
+			sourceTree = "<group>";
+		};
+		7A00000000000000000B0004 /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				7A00000000000000000B0005 /* log_format_tests.swift */,
+			);
+			path = Logging;
 			sourceTree = "<group>";
 		};
 		6DC044502801877F00281728 /* DeskPad */ = {
@@ -136,6 +177,7 @@
 				6DC044512801877F00281728 /* AppDelegate.swift */,
 				6D2F1483280C201B00A3A2E5 /* Backend */,
 				6D2F1484280C202700A3A2E5 /* Frontend */,
+				7A00000000000000000A0001 /* Logging */,
 				6D68E1B0287ABDAB00CD574A /* Helpers */,
 				6D36BEBA2801A40600EAB869 /* DeskPad-Bridging-Header.h */,
 				6D36BEB92801A39200EAB869 /* CGVirtualDisplayPrivate.h */,
@@ -169,6 +211,24 @@
 			productReference = 6DC0444E2801877F00281728 /* DeskPad.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7A00000000000000000B0001 /* DeskPadTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A00000000000000000B000A /* Build configuration list for PBXNativeTarget "DeskPadTests" */;
+			buildPhases = (
+				7A00000000000000000B0007 /* Sources */,
+				7A00000000000000000B0008 /* Frameworks */,
+				7A00000000000000000B0009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7A00000000000000000B000D /* PBXTargetDependency */,
+			);
+			name = DeskPadTests;
+			productName = DeskPadTests;
+			productReference = 7A00000000000000000B0002 /* DeskPadTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -181,6 +241,10 @@
 				TargetAttributes = {
 					6DC0444D2801877F00281728 = {
 						CreatedOnToolsVersion = 13.2.1;
+					};
+					7A00000000000000000B0001 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 6DC0444D2801877F00281728;
 					};
 				};
 			};
@@ -201,6 +265,7 @@
 			projectRoot = "";
 			targets = (
 				6DC0444D2801877F00281728 /* DeskPad */,
+				7A00000000000000000B0001 /* DeskPadTests */,
 			);
 		};
 /* End PBXProject section */
@@ -214,7 +279,32 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A00000000000000000B0009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		7A00000000000000000B000E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6DC044462801877F00281728 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6DC0444D2801877F00281728;
+			remoteInfo = DeskPad;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		7A00000000000000000B000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6DC0444D2801877F00281728 /* DeskPad */;
+			targetProxy = 7A00000000000000000B000E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		6D2F147F280C1C1400A3A2E5 /* Run SwiftFormat */ = {
@@ -255,6 +345,16 @@
 				6D2F148E280C211E00A3A2E5 /* ScreenViewController.swift in Sources */,
 				6DC044522801877F00281728 /* AppDelegate.swift in Sources */,
 				6DC04461280191EB00281728 /* main.swift in Sources */,
+				7A00000000000000000A0004 /* agents.log.logger.swift in Sources */,
+				7A00000000000000000A0005 /* agents.log.file_sink.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A00000000000000000B0007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A00000000000000000B0006 /* log_format_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -430,6 +530,44 @@
 			};
 			name = Release;
 		};
+		7A00000000000000000B000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TYPC962S4N;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stengo.DeskPadTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DeskPad.app/Contents/MacOS/DeskPad";
+			};
+			name = Debug;
+		};
+		7A00000000000000000B000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TYPC962S4N;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stengo.DeskPadTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DeskPad.app/Contents/MacOS/DeskPad";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -447,6 +585,15 @@
 			buildConfigurations = (
 				6DC0445E2801878100281728 /* Debug */,
 				6DC0445F2801878100281728 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7A00000000000000000B000A /* Build configuration list for PBXNativeTarget "DeskPadTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A00000000000000000B000B /* Debug */,
+				7A00000000000000000B000C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
