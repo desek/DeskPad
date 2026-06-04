@@ -1,3 +1,16 @@
+//
+//  ScreenViewController.swift
+//  DeskPad
+//
+//  @agents-index Window's screen-content view controller. CR-0001 Phase 4
+//  reduces this file to its UI-shell responsibilities: it installs the
+//  `MetalLayerHostView` produced by `CaptureRenderCoordinator`, observes
+//  the ReSwift `ScreenViewData` fragment, and forwards
+//  resolution / scale-factor updates to the coordinator. Capture API
+//  knowledge, virtual-display construction, and frame delivery now live in
+//  the Capture and Render subsystems.
+//
+
 import Cocoa
 import ReSwift
 
@@ -13,12 +26,7 @@ class ScreenViewController: SubscriberViewController<ScreenViewData>, NSWindowDe
     }
 
     private var display: CGVirtualDisplay!
-    // NOTE: The CGDisplayStream-backed `stream` field is retained as `Any?` for
-    // the lifetime of Phase 2/3 of CR-0001. CGDisplayStream is unavailable in
-    // the macOS 15 SDK and the legacy path is deleted in Phase 4 when the new
-    // ScreenCaptureKit + Metal coordinator is wired in. Until then, mirroring
-    // is temporarily inert (the field is never assigned).
-    private var stream: Any?
+    private var coordinator: CaptureRenderCoordinator!
     private var isWindowHighlighted = false
     private var previousResolution: CGSize?
     private var previousScaleFactor: CGFloat?
@@ -26,44 +34,40 @@ class ScreenViewController: SubscriberViewController<ScreenViewData>, NSWindowDe
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        let descriptor = CGVirtualDisplayDescriptor()
-        descriptor.setDispatchQueue(DispatchQueue.main)
-        descriptor.name = "DeskPad Display"
-        descriptor.maxPixelsWide = 5120
-        descriptor.maxPixelsHigh = 2160
-        descriptor.sizeInMillimeters = CGSize(width: 1600, height: 1000)
-        descriptor.productID = 0x1234
-        descriptor.vendorID = 0x3456
-        descriptor.serialNum = 0x0001
-
-        let display = CGVirtualDisplay(descriptor: descriptor)
-        store.dispatch(ScreenViewAction.setDisplayID(display.displayID))
+        // Build the virtual display via the extracted factory; the controller
+        // no longer carries the display-construction knowledge.
+        let (display, displayID) = VirtualDisplayFactory.makeDisplay()
         self.display = display
+        store.dispatch(ScreenViewAction.setDisplayID(displayID))
 
-        let settings = CGVirtualDisplaySettings()
-        settings.hiDPI = 1
-        settings.modes = [
-            // 32:9
-            CGVirtualDisplayMode(width: 5120, height: 1440, refreshRate: 60),
-            // 21:9 (239:100, 12:5)
-            CGVirtualDisplayMode(width: 5120, height: 2160, refreshRate: 60),
-            CGVirtualDisplayMode(width: 3840, height: 1600, refreshRate: 60),
-            CGVirtualDisplayMode(width: 3440, height: 1440, refreshRate: 60),
-            // 16:9
-            CGVirtualDisplayMode(width: 3840, height: 2160, refreshRate: 60),
-            CGVirtualDisplayMode(width: 2560, height: 1440, refreshRate: 60),
-            CGVirtualDisplayMode(width: 1920, height: 1080, refreshRate: 60),
-            CGVirtualDisplayMode(width: 1600, height: 900, refreshRate: 60),
-            CGVirtualDisplayMode(width: 1366, height: 768, refreshRate: 60),
-            CGVirtualDisplayMode(width: 1280, height: 720, refreshRate: 60),
-            // 16:10
-            CGVirtualDisplayMode(width: 2560, height: 1600, refreshRate: 60),
-            CGVirtualDisplayMode(width: 1920, height: 1200, refreshRate: 60),
-            CGVirtualDisplayMode(width: 1680, height: 1050, refreshRate: 60),
-            CGVirtualDisplayMode(width: 1440, height: 900, refreshRate: 60),
-            CGVirtualDisplayMode(width: 1280, height: 800, refreshRate: 60),
-        ]
-        display.apply(settings)
+        // Construct the capture/render coordinator and install its host view
+        // as the controller's content view's child so the CAMetalLayer is the
+        // surface the compositor sees.
+        let coordinator = CaptureRenderCoordinator()
+        coordinator.bindDisplay(displayID)
+        let host = coordinator.hostView
+        host.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.topAnchor.constraint(equalTo: view.topAnchor),
+            host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        coordinator.pacer.attach(toHostView: host)
+        ScreenConfigurationEvents.shared.subscribe { [weak coordinator] event in
+            guard let coordinator else { return }
+            Task { @MainActor in
+                await coordinator.applyConfiguration(
+                    resolution: event.resolution,
+                    scaleFactor: event.scaleFactor
+                )
+            }
+        }
+        // Up-front permission check so the user sees the TCC prompt on first
+        // launch rather than only after a stream error.
+        _ = coordinator.evaluatePermission()
+        self.coordinator = coordinator
     }
 
     override func update(with viewData: ScreenViewData) {
@@ -84,14 +88,22 @@ class ScreenViewController: SubscriberViewController<ScreenViewData>, NSWindowDe
         {
             previousResolution = viewData.resolution
             previousScaleFactor = viewData.scaleFactor
-            stream = nil
             view.window?.setContentSize(viewData.resolution)
             view.window?.contentAspectRatio = viewData.resolution
             view.window?.center()
-            // CR-0001 Phase 2: the CGDisplayStream initialiser, `showCursor`
-            // property, and `start()` are unavailable on the macOS 15 SDK.
-            // The new ScreenCaptureKit + Metal pipeline is wired in by Phase 4;
-            // until that lands, mirroring is intentionally inert.
+            // Route the new resolution/scale-factor pair through the
+            // coordinator so the capture stream is reconfigured in place
+            // (FR-6, AC-9) and the host view's drawable is resized.
+            let resolution = viewData.resolution
+            let scaleFactor = viewData.scaleFactor
+            if let coordinator {
+                Task { @MainActor in
+                    await coordinator.applyConfiguration(
+                        resolution: resolution,
+                        scaleFactor: scaleFactor
+                    )
+                }
+            }
         }
     }
 

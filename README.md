@@ -34,11 +34,28 @@ Whenever you move your mouse cursor to the virtual display, DeskPad will highlig
 </h3>
 
 # Troubleshooting
-DeskPad may need screen recording permissions to display properly. Follow these steps:
+
+## Screen recording permission (macOS 15+)
+
+DeskPad now captures the virtual display through ScreenCaptureKit, so screen
+recording permission is required for the mirrored window to show frames. On
+first launch the system will present the standard TCC prompt. If you dismiss
+it, or revoke permission later, the mirrored window goes blank until you
+re-grant access.
 
 1. **Open System Settings** → **Privacy & Security** → **Screen Recording**
 2. **Enable DeskPad** by checking the box next to it
-3. **If DeskPad appears but isn't working:**
-   - Uncheck the DeskPad option
-   - Check it again to re-enable
-4. **Restart DeskPad** for changes to take effect
+3. **Restart DeskPad** so the new permission takes effect
+
+If permission was revoked while DeskPad was running, DeskPad will detect this
+via `CGPreflightScreenCaptureAccess` and trigger a fresh TCC prompt through
+`CGRequestScreenCaptureAccess`. Accept the prompt and the mirror resumes
+without restarting the app. If the prompt does not appear, follow the steps
+above and restart DeskPad.
+
+## Log files
+
+DeskPad writes structured logs to `~/Library/Logs/DeskPad/deskpad.log` (every
+line is tagged `filename:line`). Inspect this file when reporting issues; it
+records capture and render state transitions, permission events, and any
+device-loss recovery.

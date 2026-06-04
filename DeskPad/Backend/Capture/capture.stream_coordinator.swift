@@ -50,6 +50,21 @@ public struct RealStreamClock: StreamClock {
     }
 }
 
+/// Stream-handle abstraction: lets tests stand in for a real `SCStream`
+/// without constructing one. Production wraps a live `SCStream`; tests
+/// inject a stub that records the calls so reconfigure-vs-restart is
+/// asserted directly (CR-0001 Phase 4 Test Strategy row
+/// `testReconfigureOnResolutionChange`).
+public protocol StreamHandle: AnyObject, Sendable {
+    /// Start the stream. Throws to signal an unrecoverable start error
+    /// (typically permission missing).
+    func startStream() async throws
+    /// Stop the stream. Idempotent.
+    func stopStream() async throws
+    /// Apply a new configuration without tearing the stream down.
+    func updateConfiguration(width: Int, height: Int) async throws
+}
+
 /// Owns the `SCStream` lifecycle. The actor isolates all SCK mutating calls;
 /// the rest of the app interacts with it via `start()`, `stop()`, and
 /// `updateConfiguration(...)`.
@@ -62,11 +77,51 @@ public actor StreamCoordinator {
     private let log = Logger(category: "capture")
     private let clock: any StreamClock
     private(set) var state: StreamCoordinatorState = .idle
+    private var handle: (any StreamHandle)?
+    public private(set) var startCount: Int = 0
+    public private(set) var stopCount: Int = 0
+    public private(set) var updateConfigurationCount: Int = 0
 
     /// Build a coordinator with an injectable clock. Production sites pass
     /// `RealStreamClock()`; tests pass a fake that records the intervals.
     public init(clock: any StreamClock = RealStreamClock()) {
         self.clock = clock
+    }
+
+    /// Install a stream handle. Production calls this after building the
+    /// real `SCStream`; tests inject a stub.
+    public func install(handle: any StreamHandle) {
+        self.handle = handle
+    }
+
+    /// Start the installed stream handle. Transitions state to `.running`
+    /// on success; surfaces the error otherwise.
+    public func start() async throws {
+        guard let handle else { return }
+        startCount += 1
+        try await handle.startStream()
+        state = .running
+    }
+
+    /// Stop the installed stream handle and transition to `.idle`.
+    public func stop() async throws {
+        guard let handle else {
+            state = .idle
+            return
+        }
+        stopCount += 1
+        try await handle.stopStream()
+        state = .idle
+    }
+
+    /// Reconfigure the live stream to a new pixel size. Used on virtual-
+    /// display resolution / scale-factor changes. Calls
+    /// `SCStream.updateConfiguration(_:)` under the hood via the handle, so
+    /// no stop/start pair is observed (FR-6, AC-9).
+    public func updateConfiguration(width: Int, height: Int) async throws {
+        guard let handle else { return }
+        updateConfigurationCount += 1
+        try await handle.updateConfiguration(width: width, height: height)
     }
 
     /// Compute the delay (seconds) for restart attempt `attempt` (1-indexed)
