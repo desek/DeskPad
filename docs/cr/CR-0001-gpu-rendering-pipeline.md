@@ -534,8 +534,9 @@ coordinator in (Phase 4). Each phase is independently mergeable, but the
 
 ### Phase 1: Logging and Observability Foundation
 
-Establish the project's logging standard before introducing any new pipeline
-code so every subsequent phase can rely on it.
+Establish the project's logging standard and the test target before
+introducing any new pipeline code so every subsequent phase can rely on
+them.
 
 1. Add `Logging/agents.log.logger.swift` exposing a `Logger` wrapper around
    `os.Logger` that prefixes every line with `filename:line` derived from
@@ -545,8 +546,16 @@ code so every subsequent phase can rely on it.
 3. Add `.agents/scripts/tail-deskpad-log.sh` per the project's CLI-first
    rule, invoking `tail -F` against the log path with a usage message when
    called without arguments.
+4. Bootstrap the `DeskPadTests` target inside `DeskPad.xcodeproj` so the
+   tests listed in the Test Strategy section can be added incrementally
+   alongside the new code in Phases 2 to 4. The target is created with the
+   same `MACOSX_DEPLOYMENT_TARGET = 15.0`, `SWIFT_VERSION = 6.0`, and
+   `SWIFT_STRICT_CONCURRENCY = complete` build settings as the DeskPad
+   target. Phase 1's own logging tests (`log_format_tests.swift`) land in
+   this target as the first occupants.
 
-**Affected components:** new `DeskPad/Logging/` directory, project entitlements
+**Affected components:** new `DeskPad/Logging/` directory, new
+`DeskPadTests/` target in `DeskPad.xcodeproj`, project entitlements
 verified for sandbox container write access to `~/Library/Logs/DeskPad/`.
 
 ### Phase 2: Capture Subsystem
@@ -557,9 +566,17 @@ changes yet. The captured `IOSurface` is logged but not displayed.
 1. Add `Backend/Capture/capture.virtual_display_filter.swift` exposing a
    factory that builds an `SCContentFilter` from a `CGDirectDisplayID`.
 2. Add `Backend/Capture/capture.stream_configuration.swift` that builds an
-   `SCStreamConfiguration` with BGRA pixel format, `queueDepth = 3`,
-   `minimumFrameInterval = CMTime(value: 1, timescale: 60)`, `showsCursor =
-   true`, and `pixelFormat = kCVPixelFormatType_32BGRA`.
+   `SCStreamConfiguration` with BGRA pixel format
+   (`pixelFormat = kCVPixelFormatType_32BGRA`), `showsCursor = true`, and
+   the mode-dependent fields parameterized so requirements 14, 16, and 18
+   are satisfied: `queueDepth` defaults to 3 (within the 2 to 3 range
+   required by FR-14) and `minimumFrameInterval` is selected per active
+   mode by `capture.stream_coordinator.swift` (Phase 2 step 4) and applied
+   via `SCStream.updateConfiguration(_:)`. The default low-latency interval
+   targets the host panel's maximum refresh rate (for example
+   `CMTime(value: 1, timescale: 120)` on a 120 Hz ProMotion panel); the
+   power-saving interval relaxes to `CMTime(value: 1, timescale: 60)`. The
+   factory **MUST NOT** hard-code 60 Hz as the only supported cadence.
 3. Add `Backend/Capture/capture.stream_output.swift`: a class implementing
    `SCStreamOutput` and `SCStreamDelegate` that extracts the `IOSurface` from
    each `CMSampleBuffer` via `CVPixelBufferGetIOSurface` and publishes it via
@@ -670,7 +687,7 @@ code they cover.
 | Test File | Test Name | Description | Inputs | Expected Output |
 |-----------|-----------|-------------|--------|-----------------|
 | `DeskPadTests/Logging/log_format_tests.swift` | `testLogLineCarriesFilenameAndLine` | Verifies every emitted log line contains the `filename:line` tag derived from `#fileID`/`#line`. | A logger invoked from a known call site. | Captured line matches the regex `\\bSomeFile\\.swift:\\d+\\b`. |
-| `DeskPadTests/Capture/stream_configuration_tests.swift` | `testStreamConfigurationDefaults` | Verifies the configuration factory produces BGRA, queueDepth 3, minimumFrameInterval 1/60, showsCursor true. | A target resolution and scale factor. | An `SCStreamConfiguration` with the asserted property values. |
+| `DeskPadTests/Capture/stream_configuration_tests.swift` | `testStreamConfigurationDefaults` | Verifies the configuration factory produces BGRA, `queueDepth` in {2, 3}, `showsCursor = true`, and the mode-selected `minimumFrameInterval` (1/panel-max for low-latency mode, 1/60 for power-saving mode). | A target resolution, scale factor, host panel maximum refresh rate, and active mode. | An `SCStreamConfiguration` whose `pixelFormat == kCVPixelFormatType_32BGRA`, `queueDepth in {2,3}`, `showsCursor == true`, and `minimumFrameInterval` matches the mode-selected cadence. |
 | `DeskPadTests/Capture/stream_output_tests.swift` | `testIOSurfaceExtractedZeroCopy` | Verifies the stream output publishes the same `IOSurfaceID` as the source `CMSampleBuffer`'s pixel buffer. | A synthesized `CMSampleBuffer` backed by an `IOSurface`. | Published `IOSurfaceID` equals the input surface's ID. |
 | `DeskPadTests/Capture/stream_coordinator_restart_tests.swift` | `testRestartBackoffSchedule` | Verifies bounded exponential backoff (caps at 5 s, max 10 attempts). | A coordinator with an injected clock and a stream that errors immediately. | Restart attempts occur at 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 5.0, 5.0, 5.0, 5.0 seconds; eleventh restart never fires. |
 | `DeskPadTests/Render/iosurface_texture_cache_tests.swift` | `testCacheReusesTextureForSameSurface` | Verifies the cache returns the same `MTLTexture` for two lookups of the same `IOSurface`. | Two lookups against one `IOSurface`. | Identical `MTLTexture` instance. |
@@ -684,6 +701,7 @@ code they cover.
 | `DeskPadTests/Render/newest_frame_wins_tests.swift` | `testOlderSurfaceDroppedWhenNewerArrives` | Verifies that when two captured `IOSurface`s arrive between display-link ticks, only the newest is presented and `queueDepth` plus `maximumDrawableCount` are configured at the asserted low-latency values. | Two `IOSurface`s published in quick succession to the renderer; one display-link tick. | Older surface never reaches `present`; `SCStreamConfiguration.queueDepth in {2,3}`; `CAMetalLayer.maximumDrawableCount == 2`. |
 | `DeskPadTests/Integration/adaptive_mode_switch_tests.swift` | `testAdaptiveModeSwitchOnArrivalRate` | Verifies the pipeline switches from power-saving (dirty-gated) mode to low-latency (immediate-present) mode when sustained capture-frame arrival rate crosses the threshold, and back, and that each transition is logged. | A simulated capture source that ramps from sparse static frames to sustained 60 fps and back. | Mode-transition log lines present in both directions; observed present cadence matches the active mode. |
 | `DeskPadTests/Performance/refresh_mismatch_pacing_tests.swift` | `testNoJudderAt60on120` (Instruments-backed manual benchmark) | Verifies judder-free pacing when a 60 fps interactive source is presented on a 120 Hz ProMotion panel using `CAMetalDisplayLink` target timestamps. | Synthetic 60 fps source; host pacer at 120 Hz. | Presented frame intervals align to the panel vsync grid at source cadence; no systematic judder pattern detected; no `CVDisplayLink` instance constructed. |
+| `DeskPadTests/Integration/mouse_location_behaviour_tests.swift` | `testMouseHighlightAndClickToWarpUnchanged` | Verifies cursor-entry highlight and click-to-warp behaviour match the pre-greenfield baseline after the pipeline cutover, per FR-12 and AC-12. | Simulated cursor entry over the mirrored window and a click event at a known coordinate. | Highlight state matches baseline; the click event produces the same `CGEvent`/warp action as the pre-greenfield code path. |
 
 ### Tests to Modify
 
@@ -797,6 +815,16 @@ Then it appears in ~/Library/Logs/DeskPad/deskpad.log
 Given any source file, docstring, comment, or documentation introduced by this change
 When the file is inspected
 Then the file contains zero U+2014 EM DASH characters and zero U+2013 EN DASH characters used as dashes
+```
+
+### AC-12: Mouse-location behaviour preserved
+
+```gherkin
+Given DeskPad is mirroring on the new ScreenCaptureKit-plus-Metal pipeline
+When the user moves the cursor over the mirrored window and clicks
+Then the window-highlight-on-cursor-entry behaviour matches the pre-greenfield baseline
+  And click-to-warp continues to position the virtual display cursor at the clicked location
+  And no regression in cursor responsiveness is observed relative to the pre-greenfield baseline
 ```
 
 ### AC-13: Capture-to-present latency budget is met
@@ -958,14 +986,22 @@ retained under the greenfield decision, "fall back to `CGDisplayStream`" is
 not an option; if no `SCContentFilter` variant works, the scope of this CR
 must change before further implementation proceeds.
 
-### Risk 4: ProMotion variable refresh interactions with a fixed 60 Hz capture
+### Risk 4: ProMotion variable refresh interactions across capture and present cadences
 
 **Likelihood:** medium
 **Impact:** low
-**Mitigation:** The capture is configured to deliver at up to 60 Hz; the
-presentation pacer runs at up to the host display's native rate. The dirty
-flag ensures that presenting at 120 Hz with a 60 Hz source does not double
-the GPU cost.
+**Mitigation:** Per requirement 16, the capture stream's
+`SCStreamConfiguration.minimumFrameInterval` is configured to permit
+delivery at up to the panel's maximum refresh rate when the active workload
+is interactive (low-latency mode); in power-saving mode the capture cadence
+relaxes to the static-content rate. The presentation pacer runs at up to
+the host display's native rate in both modes. When the capture source is
+slower than the panel (for example a 60 fps interactive source on a 120 Hz
+ProMotion panel), the `CAMetalDisplayLink` target-timestamp pacing required
+by requirement 17 anchors presentation to the source cadence on the panel's
+vsync grid, and the dirty flag (in power-saving mode) or the
+newest-frame-wins drop policy (in low-latency mode, requirement 14) ensures
+that the higher panel refresh does not multiply GPU cost.
 
 ### Risk 5: Permission revocation polling drains battery
 
@@ -1056,7 +1092,7 @@ Fixes applied (in-CR edits):
 - Requirement #4, Proposed Change "Render" paragraph, Phase 3 step 4, and AC-4 updated to specify obtaining the `CADisplayLink` from `NSView/NSWindow/NSScreen.displayLink(target:selector:)` (macOS 14+) and to forbid `CVDisplayLink` (deprecated as of macOS 15.0, per `CoreVideo/CVDisplayLink.h` `API_DEPRECATED_BEGIN`).
 - Greenfield section's `SCStreamConfiguration.captureResolution` reference rewritten with accurate symbol set (the macOS 14 additions `captureResolution`, `presenterOverlayPrivacyAlertSetting`, `ignoreShadowsDisplay`, `shouldBeOpaque`, `streamName`, `preservesAspectRatio` and the macOS 15 additions `captureDynamicRange`, `showMouseClicks`, `captureMicrophone`, `+streamConfigurationWithPreset:`).
 - Greenfield's `CAMetalDisplayLink` reference grounded in `QuartzCore/CAMetalDisplayLink.h` (macOS 14+) with the actual reason it is preferable (drawable + target timestamp per tick).
-- Affected Components, Phase 2, and Technical Impact updated to reference `INFOPLIST_KEY_NSScreenCaptureUsageDescription` and the existing `GENERATE_INFOPLIST_FILE = YES` build setting; deployment target bump expressed as the literal `MACOSX_DEPLOYMENT_TARGET` setting change from `13.0` to `14.0` (verified in `DeskPad.xcodeproj/project.pbxproj` lines 315 and 371).
+- Affected Components, Phase 2, and Technical Impact updated to reference `INFOPLIST_KEY_NSScreenCaptureUsageDescription` and the existing `GENERATE_INFOPLIST_FILE = YES` build setting; deployment target bump expressed as the literal `MACOSX_DEPLOYMENT_TARGET` setting change from `13.0` (verified in `DeskPad.xcodeproj/project.pbxproj` lines 315 and 371) to the greenfield-decision baseline of `15.0`. (Historical note: this reviewer pass originally raised the floor to `14.0`; the subsequent greenfield rework moved it to `15.0`, which is what the rest of the CR now specifies.)
 - Motivation paragraph on deprecation softened to match the SDK reality (header not yet annotated; deprecation is documentation-level).
 
 Verified OK (no edits required):
@@ -1074,4 +1110,39 @@ Verified OK (no edits required):
 - `CVDisplayLink` — `CoreVideo/CVDisplayLink.h:51` `API_DEPRECATED_BEGIN("use NSView.displayLink(target:selector:)...", macos(10.4, 15.0))`. The CR now correctly forbids its use.
 
 Unresolved: none. The CR's API surface is now self-consistent with the macOS 26.5 SDK headers.
+<!-- /review-summary -->
+
+<!-- review-summary -->
+**Reviewer pass (consistency after greenfield rework and interactive-latency additions, 2026-06-04):**
+
+Scope of this pass: cross-check the layered edits (macOS 15.0 / Swift 6 / Metal 3 greenfield rework; FRs 14-18 and ACs 13-16 latency additions; phase collapse from 5 to 4) for internal contradictions, ambiguity, requirement/AC coverage, scope/diagram accuracy, and project-convention compliance. CR-0002 cites this CR's FRs 14-18 and ACs 13-16, so AC numbering 13-17 is preserved deliberately; no global renumbering was performed.
+
+Findings (6 total):
+
+1. **Contradiction**: Test Strategy stated "Phase 1 adds a `DeskPadTests` target alongside the new code", but Phase 1's listed steps (logger wrapper, file sink, tail script) did not include the test-target bootstrap; the bootstrap appeared only as a separate line item in Estimated Effort.
+2. **Contradiction**: Risk 4 ("ProMotion variable refresh interactions with a fixed 60 Hz capture") asserted capture is configured to deliver "at up to 60 Hz", directly conflicting with FR-16 (capture `minimumFrameInterval` must permit delivery up to the panel's maximum refresh rate in interactive workloads) and FR-18 (adaptive mode switching).
+3. **Contradiction**: Phase 2 step 2 hard-coded `minimumFrameInterval = CMTime(value: 1, timescale: 60)` in the configuration factory, conflicting with FR-16 (rate must adapt to the panel's maximum in low-latency mode) and FR-18 (mode-dependent cadence). The matching test row (`testStreamConfigurationDefaults`) asserted the same hard-coded 1/60 and inherited the contradiction.
+4. **Requirement → AC coverage gap**: FR-12 ("MUST preserve mouse-location behaviour, no regression in cursor responsiveness") had no acceptance criterion and no test row. The original CR's AC numbering also exposed a gap: AC-1 through AC-11 followed by AC-13 with no AC-12, because the latency-additions checkpoint renumbered the old AC-12 to AC-17.
+5. **Drift in the embedded API-verification summary**: the prior `<!-- review-summary -->` block stated the deployment target was raised to `14.0`, but the subsequent greenfield rework moved the floor to `15.0`. The rest of the CR (frontmatter stakeholders, FR-4, AC-1, Affected Components, Phase 2, Technical Impact, Decision Outcome, Risk 2, User Impact) is internally consistent at `15.0`; only the historical reviewer block was stale.
+6. **No drift against current codebase**: `DeskPad.xcodeproj/project.pbxproj` confirmed `MACOSX_DEPLOYMENT_TARGET = 13.0` and `GENERATE_INFOPLIST_FILE = YES` (lines 315, 371, 392, 418) exactly as the CR describes. `README.md` contains a `# Troubleshooting` section (line 36) so the README-update commitment in Phase 4 step 5 maps to a real anchor. No `AGENTS.md`, `CLAUDE.md`, `docs/agents/`, or `Makefile` exist in the repo, so the CR's `xcodebuild`-based verification commands are appropriate (no `make ci` equivalent to wire in). FR/AC cross-references against current paths under `DeskPad/Frontend/Screen/`, `DeskPad/Backend/ScreenConfiguration/`, and `DeskPad/Backend/AppState.swift` are accurate.
+
+Fixes applied (in-CR edits):
+
+- Phase 1 gained an explicit step 4 bootstrapping the `DeskPadTests` target with the same `MACOSX_DEPLOYMENT_TARGET = 15.0` / `SWIFT_VERSION = 6.0` / `SWIFT_STRICT_CONCURRENCY = complete` settings as the main target, and the Phase 1 "Affected components" line was updated to list the new test target. Test Strategy now matches Phase 1.
+- Risk 4 rewritten as "ProMotion variable refresh interactions across capture and present cadences", aligning the mitigation with FR-16 (capture cadence configurable up to panel max in low-latency mode, relaxed in power-saving mode), FR-17 (`CAMetalDisplayLink` target-timestamp pacing on the vsync grid), FR-14 (newest-frame-wins in low-latency mode), and FR-5 (dirty-gate in power-saving mode).
+- Phase 2 step 2 rewritten so `minimumFrameInterval` is mode-selected by `capture.stream_coordinator.swift` rather than hard-coded, with the explicit prohibition that the factory **MUST NOT** hard-code 60 Hz. The matching `testStreamConfigurationDefaults` row updated to assert the mode-dependent cadence (1/panel-max in low-latency mode, 1/60 in power-saving mode) and `queueDepth in {2, 3}` per FR-14.
+- AC-12 added as "Mouse-location behaviour preserved", giving FR-12 explicit acceptance coverage and incidentally closing the AC numbering gap left by the latency-additions checkpoint (ACs now 1-17 contiguous; ACs 13-16 cited by CR-0002 are unchanged in number and content).
+- A new test row `mouse_location_behaviour_tests.swift / testMouseHighlightAndClickToWarpUnchanged` added to the Tests-to-Add table, mapping FR-12 and AC-12 to a concrete test.
+- The historical API-verification review-summary block updated to record that the originally-recommended `14.0` deployment-target bump was later moved to `15.0` by the greenfield rework, so a reader of the audit trail sees a coherent sequence rather than an unexplained discrepancy.
+
+No renumbering of pre-existing identifiers: FRs 1-18 unchanged, ACs 13-17 unchanged (CR-0002's references to FRs 14-18 and ACs 13-16 remain valid), Phase numbering unchanged (1-4), test rows unchanged in identity (one row updated in description, one row added).
+
+Project-convention compliance verified:
+- macOS 15.0 / Swift 6 / Metal 3 baseline stated consistently across frontmatter stakeholders, FR-4, AC-1, Affected Components, Phase 2, Technical Impact, Decision Outcome, Risk 2, and User Impact.
+- Diagrams: Current State Diagram still depicts the `CGDisplayStream`/`view.layer.contents`/`Timer` path described in Current State. Proposed State Diagram still depicts `SCStream` capture, `CAMetalLayer` rendering, `CADisplayLink` pacing, the coordinator, permission and reconfig observers - consistent with the Proposed Change prose and the four-phase plan. Implementation Flow diagram correctly shows phases P1 -> P4 with no orphaned P5.
+- Affected Components list still matches the files referenced across all phases (current paths verified against `DeskPad/Frontend/Screen/ScreenViewController.swift`, `DeskPad/Frontend/Screen/ScreenViewData.swift`, `DeskPad/Backend/ScreenConfiguration/ScreenConfigurationSideEffect.swift`, `DeskPad/Backend/AppState.swift`).
+- Verification Commands section uses `xcodebuild` (appropriate for this Xcode project; the repo has no `Makefile` so no `make ci` target exists to invoke).
+- Every requirement uses MUST / MUST NOT (RFC 2119); the lone `MAY` in FR-4 is the intentional `CAMetalDisplayLink` substitution affordance.
+
+Unresolved: none.
 <!-- /review-summary -->
