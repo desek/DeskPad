@@ -1,3 +1,7 @@
 BuildTools/.build
 BuildTools/.swiftpm
 xcuserdata/
+
+# Build artifacts
+build/
+*.log

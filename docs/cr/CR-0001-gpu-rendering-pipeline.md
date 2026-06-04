@@ -1,0 +1,846 @@
+---
+name: cr-gpu-rendering-pipeline
+description: Replace the CGDisplayStream mirroring path with a ScreenCaptureKit plus Metal rendering pipeline for higher throughput, lower power, and stronger reliability.
+id: "CR-0001"
+status: "draft"
+date: 2026-06-04
+requestor: desek
+stakeholders:
+  - DeskPad maintainers (Stengo)
+  - End users running macOS 14 and later
+priority: "high"
+target-version: "next-major"
+source-branch: main
+source-commit: c3349f0
+---
+
+# Replace CGDisplayStream Mirroring With a ScreenCaptureKit and Metal Rendering Pipeline
+
+## Change Summary
+
+DeskPad currently mirrors its private `CGVirtualDisplay` into a window by attaching each
+captured `IOSurface` directly to `view.layer.contents` from inside a `CGDisplayStream`
+handler scheduled on `DispatchQueue.main`. `CGDisplayStream` has been deprecated by
+Apple in favour of `ScreenCaptureKit`, the delivery is bound to the main thread, and
+the rendering path performs no explicit pacing, frame-rate adaptation, or recovery on
+stream failure. This change replaces that path with a dedicated capture and rendering
+subsystem built on `SCStream`, a `CAMetalLayer` driven by `CADisplayLink`, and
+zero-copy `IOSurface`-backed sampling, so the application becomes faster, more
+power-efficient, and resilient to stream and permission disruptions.
+
+## Motivation and Background
+
+DeskPad's purpose is to expose a virtual display as an ordinary mirrored window so a
+presenter can share a smaller workspace. The current implementation works, but three
+forces now push for a redesign:
+
+1. **Deprecation.** `CGDisplayStream` and its companion APIs have been marked
+   deprecated in macOS 14 and later. Continuing on the legacy API is a known
+   reliability liability: future macOS releases may remove or further restrict it,
+   and the bug surface (permission revocation handling, configuration changes, error
+   recovery) is already minimal. `ScreenCaptureKit` (`SCStream`) is Apple's
+   supported successor and provides a cleaner permission, filtering, and
+   reconfiguration model.
+
+2. **Performance and power efficiency.** Frames are delivered on `DispatchQueue.main`
+   and assigned to a `CALayer`'s `contents` from the main thread. Every layout pass,
+   AppKit event, and ReSwift dispatch contends with frame delivery on the same
+   queue. On Apple Silicon, where `IOSurface`-backed buffers are zero-copy in
+   unified memory, this serialization wastes the architectural advantage. The
+   pipeline also presents every captured frame regardless of whether contents
+   changed, ignoring ProMotion variable refresh and burning energy on idle
+   redraws.
+
+3. **Reliability.** There is no observable recovery when the capture stream errors,
+   when screen recording permission is revoked mid-session, when the virtual
+   display is reconfigured, or when the GPU device is reset. There is no
+   structured logging, so post-hoc diagnosis from a user report is effectively
+   guesswork.
+
+## Change Drivers
+
+* Apple's deprecation of `CGDisplayStream` and the public-API direction toward
+  `ScreenCaptureKit`.
+* User-reported sluggishness and inconsistent mirroring on macOS 14 and later,
+  particularly at 5120x2160 and 5120x1440.
+* Power draw on battery when DeskPad is left running idle (no dirty-frame
+  suppression today).
+* Operational opacity: no greppable, persisted logs to diagnose failures.
+* Project owner's coding standards (small single-purpose files, hierarchical
+  namespace naming, docstring with `@agents-index`, no em-dashes), which the
+  current monolithic `ScreenViewController` does not satisfy.
+
+## Current State
+
+Today, the rendering pipeline lives almost entirely inside
+`DeskPad/Frontend/Screen/ScreenViewController.swift`. The relevant facts:
+
+* `viewDidLoad` constructs a `CGVirtualDisplay` (private API) with a fixed set of
+  display modes and stores its `displayID` in ReSwift state.
+* `update(with:)` reacts to ReSwift state changes. Whenever resolution or scale
+  factor changes, it tears down the previous `CGDisplayStream`, resizes the
+  window, and constructs a new `CGDisplayStream` with:
+    * `dispatchQueueDisplay: display.displayID`,
+    * `pixelFormat: 1_111_970_369` (the four-character code for BGRA),
+    * `queue: .main`,
+    * a handler that assigns `frameSurface` to `self?.view.layer?.contents`.
+* Mouse tracking polls `NSEvent.mouseLocation` from a 250 ms repeating `Timer`
+  in `MouseLocationSideEffect`, dispatching ReSwift actions on each tick.
+* There is no `CADisplayLink` or `CVDisplayLink`, no Metal usage, no explicit
+  colorspace handling, no logging, and no error-handling path on the stream.
+
+### Current State Diagram
+
+```mermaid
+flowchart TD
+    subgraph Current["Current Rendering Pipeline"]
+        VD[CGVirtualDisplay private API] --> CDS[CGDisplayStream BGRA, queue: .main]
+        CDS -->|IOSurface per frame on main| LC[view.layer.contents assignment]
+        LC --> WIN[NSWindow CALayer compositor]
+        TIMER[Timer 0.25s mouse poll] --> STORE[ReSwift store on main]
+        STORE --> SVC[ScreenViewController update]
+        SVC --> CDS
+    end
+```
+
+## Proposed Change
+
+Introduce a dedicated capture-and-render subsystem with three responsibilities cleanly
+separated into small, single-purpose files:
+
+1. **Capture.** An `SCStream` configured against an `SCContentFilter` for the
+   virtual display's `CGDirectDisplayID`, delivering `CMSampleBuffer`s whose
+   `CVImageBuffer` backing is an `IOSurface`. Delivery happens on a dedicated
+   capture queue. A custom `SCStreamOutput` extracts the `IOSurface` reference
+   without copying pixel data.
+
+2. **Render.** A `CAMetalLayer` hosted in the window's content view, configured
+   with `framebufferOnly = false` is unnecessary; we use a trivial textured-quad
+   render pipeline that samples a `MTLTexture` created from the captured
+   `IOSurface` via `MTLDevice.makeTexture(descriptor:iosurface:plane:)`. A
+   `CADisplayLink` drives present pacing and adapts to the host display's
+   refresh rate, including ProMotion. Presentation is gated by a dirty flag set
+   by the capture callback so steady-state idle frames are skipped.
+
+3. **Lifecycle and reliability.** An owning coordinator handles permission
+   prompts, stream restart on `SCStreamDelegate.stream(_:didStopWithError:)`,
+   reconfiguration on `NSApplication.didChangeScreenParametersNotification`,
+   GPU device-loss recovery, and structured logging via `os.Logger` plus a
+   filesystem-tee through the project's logging standard (persist to file, tag
+   lines with `filename:line`).
+
+### Proposed State Diagram
+
+```mermaid
+flowchart TD
+    subgraph Capture["Capture (background queue)"]
+        VD[CGVirtualDisplay] --> SCF[SCContentFilter for displayID]
+        SCF --> SCS[SCStream BGRA 8-bit IOSurface delivery]
+        SCS --> SCO[SCStreamOutput screen sample]
+        SCO --> SURF[IOSurface ref atomic swap]
+    end
+
+    subgraph Render["Render (display-link paced)"]
+        DL[CADisplayLink ProMotion-aware] --> RNDR[MetalRenderer.draw]
+        SURF --> TEX[MTLTexture from IOSurface]
+        TEX --> RNDR
+        RNDR --> CML[CAMetalLayer.nextDrawable]
+        CML --> WIN[NSWindow compositor]
+    end
+
+    subgraph Control["Control"]
+        COORD[CaptureRenderCoordinator] --> SCS
+        COORD --> DL
+        COORD --> LOG[Structured logger filename:line]
+        PERM[Permission watcher] --> COORD
+        RECONF[Display reconfig observer] --> COORD
+    end
+```
+
+## Greenfield (No Backwards Compatibility)
+
+If backwards compatibility were not a constraint, the architecturally cleanest
+DeskPad rewrite would look like this:
+
+* **Minimum deployment macOS 14.0**, ideally 15.0, so `ScreenCaptureKit`'s mature
+  surface (including configurable presenter overlays, content-filter exclusion,
+  and `SCStreamConfiguration.captureResolution`) is fully available. The
+  Info.plist and Xcode project `MACOSX_DEPLOYMENT_TARGET` are bumped accordingly.
+* **`CGDisplayStream` removed entirely**, along with any conditional
+  branching, so there is one capture path with one set of failure modes.
+* **Swift 6 with strict concurrency.** The capture pipeline becomes an
+  `actor`-isolated subsystem; the renderer is a `@MainActor` consumer reading
+  a sendable `IOSurface` handle through an atomic property. Compile-time data
+  race elimination collapses an entire category of latent bugs.
+* **Metal 3 only.** `MTLBindlessTexture`-style argument buffers and
+  `MTLResidencySet` are not strictly needed for a single-quad blit, but locking
+  to Metal 3 means we can use `MTLEvent`-based synchronization with the
+  `IOSurface` producer, modern `MTLDevice.makeTexture(descriptor:iosurface:)`
+  patterns, and `CAMetalDisplayLink` (macOS 14 plus) for tighter display-link
+  integration than `CADisplayLink`.
+* **ReSwift removed from the hot path.** The rendering subsystem becomes
+  self-contained and observes display configuration via Combine or
+  `AsyncSequence` directly; ReSwift continues to model UI-shell state, but
+  frame delivery no longer round-trips through the global store.
+* **`Timer`-based mouse polling replaced with `CGEvent` taps or
+  `NSEvent.addGlobalMonitorForEvents`.** Event-driven mouse tracking removes a
+  fixed 4 Hz wakeup that prevents the App Nap path on idle.
+* **Code structure rewritten under the project owner's small-file rule.** The
+  current `ScreenViewController.swift` (130 lines doing five jobs) is decomposed
+  into roughly a dozen files, each named hierarchically (for example
+  `frontend.screen.metal_layer_host.swift`,
+  `backend.capture.sc_stream_factory.swift`,
+  `backend.render.iosurface_texture_cache.swift`).
+
+What this buys, concretely:
+
+* Roughly 40 to 60 percent lower CPU on the main thread on Apple Silicon at
+  4K60, estimated, because frame delivery never touches the main queue and
+  state-fragment dispatching is bypassed for pixel data.
+* Idle GPU and CPU draw approaching zero when the captured contents are
+  unchanged (no `CGDisplayStream` "keep pumping" semantics; `SCStream` only
+  delivers on change at the configured `minimumFrameInterval`, and our dirty
+  gate suppresses redundant redraws).
+* Elimination of a class of crashes: removing the deprecated API removes the
+  set of OS-version-specific quirks it carries.
+* Strictly typed concurrency removes the silent main-thread reentrancy hazards
+  in the current `update(with:)` path that resizes the window and rebuilds the
+  stream from inside a ReSwift callback.
+
+These gains are explicitly marked as estimates and **MUST** be validated by the
+benchmarks defined in the Test Strategy.
+
+## Requirements
+
+### Functional Requirements
+
+1. The system **MUST** capture the virtual display's framebuffer using
+   `SCStream` configured against an `SCContentFilter` initialized from the
+   `CGDirectDisplayID` returned by `CGVirtualDisplay.displayID`.
+2. The system **MUST** deliver captured frames as `IOSurface`-backed
+   `CMSampleBuffer`s on a dedicated background dispatch queue, not on
+   `DispatchQueue.main`.
+3. The system **MUST** present captured frames through a `CAMetalLayer`
+   hosted in the screen view, using a Metal render pipeline that samples a
+   `MTLTexture` created zero-copy from the captured `IOSurface`.
+4. The system **MUST** pace presentation with `CADisplayLink` (or
+   `CAMetalDisplayLink` on macOS 14 and later) bound to the window's host
+   `NSScreen`, including correct behaviour when the window moves between
+   displays with different refresh rates.
+5. The system **MUST** skip presentation cycles when no new captured frame has
+   arrived since the last present (a "dirty bit" gate), so an idle virtual
+   display causes no GPU work beyond compositor minima.
+6. The system **MUST** reconfigure the capture stream when the virtual
+   display's resolution or scale factor changes, by updating
+   `SCStreamConfiguration.width`, `.height`, and `.pixelFormat` via
+   `SCStream.updateConfiguration(_:)` rather than tearing down and
+   reconstructing the stream where the API allows.
+7. The system **MUST** restart the capture stream automatically when
+   `SCStreamDelegate.stream(_:didStopWithError:)` fires, with bounded
+   exponential backoff capped at 5 seconds and a maximum of 10 consecutive
+   attempts before surfacing a user-visible error state.
+8. The system **MUST** detect screen recording permission revocation
+   mid-session (via `CGPreflightScreenCaptureAccess` polling on a 2 Hz cadence
+   only while the stream is in an error state, never during steady-state
+   capture) and prompt the user to re-grant via
+   `CGRequestScreenCaptureAccess`.
+9. The system **MUST** recover from Metal device loss
+   (`MTLCommandBuffer.error` containing `MTLCommandBufferError.deviceLost`)
+   by acquiring a new `MTLDevice` via `MTLCreateSystemDefaultDevice()` and
+   rebuilding the render pipeline state without restarting the application.
+10. The system **MUST** log every state transition of the capture and render
+    subsystems through `os.Logger` and additionally tee structured log lines
+    to a rotating file under `~/Library/Logs/DeskPad/`, with each line tagged
+    `filename:line` per the project's logging standard.
+11. The system **MUST NOT** retain captured `IOSurface` references beyond the
+    next presented frame, so that backpressure on the capture queue is
+    governed by `SCStreamConfiguration.queueDepth` rather than uncontrolled
+    accumulation.
+12. The system **MUST** preserve the existing mouse-location behaviour
+    (window highlight on cursor entry, click-to-warp), with no regression in
+    cursor responsiveness.
+13. The system **MUST NOT** assign `IOSurface` instances directly to any
+    `CALayer.contents` property anywhere in the rendering pipeline.
+
+### Non-Functional Requirements
+
+1. The system **MUST** sustain capture and render at the virtual display's
+   configured refresh rate (60 Hz at the modes listed in
+   `ScreenViewController`, up to 5120x2160) with average frame latency (capture
+   timestamp to presentation timestamp) no greater than 33 ms on an
+   Apple Silicon M-series Mac.
+2. The system **MUST** keep main-thread CPU utilization attributable to the
+   rendering pipeline below 5 percent during steady-state 4K60 mirroring,
+   measured with Instruments' Time Profiler on the main thread.
+3. The system **MUST** suppress GPU work entirely on frames with no captured
+   delta, measured as zero non-compositor GPU command-buffer submissions per
+   `CADisplayLink` tick when the virtual display is idle.
+4. The system **MUST** structure capture, render, and lifecycle responsibilities
+   into separate files, each with a top-level docstring containing an
+   `@agents-index` annotation and no file exceeding 200 lines of code.
+5. The system **MUST NOT** use em-dashes in any prose introduced by this change
+   (comments, docstrings, log messages, or documentation).
+
+## Affected Components
+
+* `DeskPad/Frontend/Screen/ScreenViewController.swift` (decomposed; the
+  `CGDisplayStream` block is removed)
+* `DeskPad/Frontend/Screen/ScreenViewData.swift` (no schema change expected,
+  but verified)
+* `DeskPad/Backend/ScreenConfiguration/ScreenConfigurationSideEffect.swift`
+  (extended to publish a typed reconfiguration event the new coordinator
+  observes)
+* `DeskPad/Backend/AppState.swift` (new optional fragment for capture state if
+  required by UI surfacing)
+* New files under `DeskPad/Frontend/Screen/` and `DeskPad/Backend/Capture/`
+  and `DeskPad/Backend/Render/` (see Implementation Approach for the exact
+  list)
+* `DeskPad.entitlements` (verified to keep `com.apple.security.app-sandbox`
+  and add any `ScreenCaptureKit`-specific entitlements if needed at runtime)
+* `Info.plist` (add `NSScreenCaptureUsageDescription` and bump deployment
+  target)
+* `README.md` (troubleshooting section updated to reflect the new
+  permission flow)
+
+## Scope Boundaries
+
+### In Scope
+
+* Replacement of the capture API with `ScreenCaptureKit`.
+* Introduction of a `CAMetalLayer`-based render path with `CADisplayLink`
+  pacing and dirty-frame gating.
+* Permission revocation handling, stream restart with backoff, GPU device-loss
+  recovery, and display reconfiguration handling.
+* Structured logging persisted to disk with `filename:line` tagging.
+* Decomposition of `ScreenViewController.swift` into small, single-purpose
+  files following the hierarchical namespace naming convention.
+* Updating documentation and the troubleshooting README to reflect the new
+  permission and behaviour model.
+
+### Out of Scope ("Here, But Not Further")
+
+* Replacing the private `CGVirtualDisplay` API with another virtual display
+  mechanism. The CR keeps the virtual display creation path as-is and changes
+  only how its framebuffer is captured and presented.
+* Migrating ReSwift to another state management approach. The greenfield
+  section discusses this as a future direction, but it is intentionally
+  deferred.
+* Replacing the `Timer`-based mouse polling with event-driven monitoring. That
+  is recorded as a follow-up and is not part of this change.
+* Audio capture. DeskPad mirrors a display only.
+* Multiple simultaneous virtual displays. The architecture leaves room for
+  this, but only one display is in scope.
+* Recording to disk, streaming over the network, or any output other than
+  the existing in-window mirror.
+
+## Alternative Approaches Considered
+
+* **(a) ScreenCaptureKit `SCStream` with IOSurface plus `CAMetalLayer` render
+  (chosen).** Supported API, zero-copy on Apple Silicon, ProMotion-aware, full
+  control over pacing and dirty-frame suppression. The render path is a
+  trivial textured quad, so Metal complexity is bounded.
+* **(b) Keep `CGDisplayStream`.** Rejected: deprecated, lacks a defined
+  restart contract, ties frame delivery to a chosen queue (today `.main`)
+  with no equivalent of `SCStreamConfiguration.queueDepth` for backpressure,
+  and is at risk of removal in future macOS releases.
+* **(c) `ScreenCaptureKit` plus direct `IOSurface`-to-`CALayer.contents`
+  assignment (no Metal).** Tempting because it is the smallest change, but it
+  retains the main-thread coupling and forfeits dirty-frame gating, ProMotion
+  adaptation, and colorspace control. Apple's own sample code uses this only
+  for the simplest viewer; for a steady-state mirror at large resolutions it
+  leaves performance on the table.
+* **(d) `ScreenCaptureKit` plus `AVSampleBufferDisplayLayer`.** Hands off
+  rendering to the system, but presentation pacing and dirty-frame
+  suppression are not under our control, and colorspace handling becomes
+  implicit. Rejected for the same observability reasons.
+* **(e) Software composite via Core Image.** Rejected outright on
+  performance and power grounds.
+
+## Impact Assessment
+
+### User Impact
+
+* On first launch after the update, users may be prompted to re-authorize
+  screen recording for DeskPad (because the API surface used by the app has
+  changed). The README's troubleshooting section is updated to walk through
+  this.
+* On macOS versions older than the new minimum (target 14.0; see Risks for the
+  fallback), the app will refuse to launch with a clear message rather than
+  failing opaquely. Users on older macOS continue to use the prior release.
+* Steady-state CPU and battery impact is reduced. Estimated, not yet measured.
+
+### Technical Impact
+
+* The `CGDisplayStream` code path is removed. Code paths that depended on its
+  specific behaviour (for example, the every-frame assignment to
+  `view.layer.contents`) are removed at the same time.
+* The minimum deployment target is bumped to macOS 14.0 to use
+  `ScreenCaptureKit` without `available` guards. (If the project decides to
+  preserve macOS 13.0 support, this becomes a conditional fallback and the
+  greenfield benefits diminish; see Risks.)
+* New external dependency: `ScreenCaptureKit.framework` and `Metal.framework`
+  (Metal is already implicitly linked through AppKit).
+* New runtime behaviour around permission prompts requires the
+  `NSScreenCaptureUsageDescription` key in `Info.plist`.
+
+### Business Impact
+
+* Lower power draw improves DeskPad's standing as a long-running
+  presenter tool.
+* Aligning with the supported Apple API reduces the maintenance liability of
+  a deprecated private path.
+
+## Implementation Approach
+
+The work proceeds in five sequential phases. Each phase is independently
+mergeable behind a feature flag (`UserDefaults` key `DeskPad.useGPURenderer`,
+defaulting to `false` until Phase 5).
+
+### Phase 1: Logging and Observability Foundation
+
+Establish the project's logging standard before introducing any new pipeline
+code so every subsequent phase can rely on it.
+
+1. Add `Logging/agents.log.logger.swift` exposing a `Logger` wrapper around
+   `os.Logger` that prefixes every line with `filename:line` derived from
+   `#fileID` and `#line`.
+2. Add `Logging/agents.log.file_sink.swift` that tees log lines into
+   `~/Library/Logs/DeskPad/deskpad.log` with size-based rotation.
+3. Add `.agents/scripts/tail-deskpad-log.sh` per the project's CLI-first
+   rule, invoking `tail -F` against the log path with a usage message when
+   called without arguments.
+
+**Affected components:** new `DeskPad/Logging/` directory, project entitlements
+verified for sandbox container write access to `~/Library/Logs/DeskPad/`.
+
+### Phase 2: Capture Subsystem
+
+Introduce the `ScreenCaptureKit` capture path in isolation, with no rendering
+changes yet. The captured `IOSurface` is logged but not displayed.
+
+1. Add `Backend/Capture/capture.virtual_display_filter.swift` exposing a
+   factory that builds an `SCContentFilter` from a `CGDirectDisplayID`.
+2. Add `Backend/Capture/capture.stream_configuration.swift` that builds an
+   `SCStreamConfiguration` with BGRA pixel format, `queueDepth = 3`,
+   `minimumFrameInterval = CMTime(value: 1, timescale: 60)`, `showsCursor =
+   true`, and `pixelFormat = kCVPixelFormatType_32BGRA`.
+3. Add `Backend/Capture/capture.stream_output.swift`: a class implementing
+   `SCStreamOutput` and `SCStreamDelegate` that extracts the `IOSurface` from
+   each `CMSampleBuffer` via `CVPixelBufferGetIOSurface` and publishes it via
+   an atomic reference for the renderer.
+4. Add `Backend/Capture/capture.stream_coordinator.swift`: an actor that
+   owns the `SCStream` lifecycle (start, stop, reconfigure, restart with
+   exponential backoff).
+
+**Affected components:** new `DeskPad/Backend/Capture/` directory,
+`Info.plist` (add `NSScreenCaptureUsageDescription`), project deployment
+target raised to macOS 14.0.
+
+### Phase 3: Render Subsystem
+
+Introduce the Metal render path, still gated behind the feature flag so the
+existing `CGDisplayStream` path remains the default.
+
+1. Add `Frontend/Screen/render.metal_layer_host_view.swift`: an `NSView`
+   subclass that hosts a `CAMetalLayer`, owns the `MTLDevice`, and resizes
+   the drawable to match the captured resolution.
+2. Add `Backend/Render/render.iosurface_texture_cache.swift`: a tiny
+   `IOSurface`-to-`MTLTexture` cache keyed by `IOSurfaceID`, with weak
+   eviction.
+3. Add `Backend/Render/render.blit_pipeline.swift`: the textured-quad render
+   pipeline state, vertex and fragment shaders, and a `draw(into:from:)`
+   entry point.
+4. Add `Backend/Render/render.display_link_pacer.swift`: a wrapper around
+   `CADisplayLink` (or `CAMetalDisplayLink` when available) that calls a
+   closure once per refresh, gated by a `Bool` dirty flag.
+5. Add `Backend/Render/render.device_loss_recovery.swift`: a small utility
+   that observes command-buffer errors and rebuilds the device and pipeline
+   on `deviceLost`.
+
+**Affected components:** new `DeskPad/Backend/Render/` directory, new
+`DeskPad/Frontend/Screen/` files.
+
+### Phase 4: Integration and Lifecycle
+
+Wire the capture and render subsystems together behind the
+`CaptureRenderCoordinator`, replacing the existing `CGDisplayStream` block
+when the feature flag is on.
+
+1. Add `Frontend/Screen/screen.capture_render_coordinator.swift`: the
+   top-level coordinator. It owns the `StreamCoordinator`, the
+   `MetalLayerHostView`, the `DisplayLinkPacer`, and observes
+   `NSApplication.didChangeScreenParametersNotification`.
+2. Modify `Frontend/Screen/ScreenViewController.swift`: extract the
+   `CGVirtualDisplay` creation into
+   `Backend/Capture/capture.virtual_display_factory.swift`, replace the
+   `CGDisplayStream` block with a call to the coordinator, and remove the
+   direct `view.layer.contents` assignment.
+3. Modify `Backend/ScreenConfiguration/ScreenConfigurationSideEffect.swift`
+   to publish a typed event the coordinator subscribes to (in addition to
+   the existing ReSwift dispatch).
+4. Add permission-revocation handling using `CGPreflightScreenCaptureAccess`
+   and `CGRequestScreenCaptureAccess`.
+
+**Affected components:** `Frontend/Screen/ScreenViewController.swift`,
+`Backend/ScreenConfiguration/ScreenConfigurationSideEffect.swift`,
+`Backend/Capture/`, `Backend/Render/`, `Frontend/Screen/`.
+
+### Phase 5: Flip Default, Delete Legacy Path
+
+After Phase 4 has soaked in a manually verified release candidate:
+
+1. Default `DeskPad.useGPURenderer` to `true`.
+2. Delete the `CGDisplayStream` code path and the legacy frame-handling closure.
+3. Update `README.md` troubleshooting section.
+4. Verify that `grep -rn "CGDisplayStream" DeskPad/` returns no matches.
+
+**Affected components:** `ScreenViewController.swift`, `README.md`,
+project-wide cleanup.
+
+### Implementation Flow
+
+```mermaid
+flowchart LR
+    subgraph P1["Phase 1: Logging"]
+        A1[Logger wrapper] --> A2[File sink]
+    end
+    subgraph P2["Phase 2: Capture"]
+        B1[SCContentFilter] --> B2[SCStreamConfiguration]
+        B2 --> B3[SCStreamOutput]
+        B3 --> B4[StreamCoordinator actor]
+    end
+    subgraph P3["Phase 3: Render"]
+        C1[CAMetalLayer host view] --> C2[IOSurface texture cache]
+        C2 --> C3[Blit pipeline]
+        C3 --> C4[DisplayLink pacer]
+        C4 --> C5[Device-loss recovery]
+    end
+    subgraph P4["Phase 4: Integration"]
+        D1[CaptureRenderCoordinator] --> D2[Wire into ViewController]
+        D2 --> D3[Permission watcher]
+    end
+    subgraph P5["Phase 5: Cutover"]
+        E1[Flip default flag] --> E2[Delete CGDisplayStream]
+    end
+    P1 --> P2 --> P3 --> P4 --> P5
+```
+
+## Test Strategy
+
+The project does not currently have a Swift test target. Phase 1 adds a
+`DeskPadTests` target alongside the new code so the tests below are
+runnable. All tests live under `DeskPadTests/` mirroring the namespace of the
+code they cover.
+
+### Tests to Add
+
+| Test File | Test Name | Description | Inputs | Expected Output |
+|-----------|-----------|-------------|--------|-----------------|
+| `DeskPadTests/Logging/log_format_tests.swift` | `testLogLineCarriesFilenameAndLine` | Verifies every emitted log line contains the `filename:line` tag derived from `#fileID`/`#line`. | A logger invoked from a known call site. | Captured line matches the regex `\\bSomeFile\\.swift:\\d+\\b`. |
+| `DeskPadTests/Capture/stream_configuration_tests.swift` | `testStreamConfigurationDefaults` | Verifies the configuration factory produces BGRA, queueDepth 3, minimumFrameInterval 1/60, showsCursor true. | A target resolution and scale factor. | An `SCStreamConfiguration` with the asserted property values. |
+| `DeskPadTests/Capture/stream_output_tests.swift` | `testIOSurfaceExtractedZeroCopy` | Verifies the stream output publishes the same `IOSurfaceID` as the source `CMSampleBuffer`'s pixel buffer. | A synthesized `CMSampleBuffer` backed by an `IOSurface`. | Published `IOSurfaceID` equals the input surface's ID. |
+| `DeskPadTests/Capture/stream_coordinator_restart_tests.swift` | `testRestartBackoffSchedule` | Verifies bounded exponential backoff (caps at 5 s, max 10 attempts). | A coordinator with an injected clock and a stream that errors immediately. | Restart attempts occur at 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 5.0, 5.0, 5.0, 5.0 seconds; eleventh restart never fires. |
+| `DeskPadTests/Render/iosurface_texture_cache_tests.swift` | `testCacheReusesTextureForSameSurface` | Verifies the cache returns the same `MTLTexture` for two lookups of the same `IOSurface`. | Two lookups against one `IOSurface`. | Identical `MTLTexture` instance. |
+| `DeskPadTests/Render/display_link_pacer_tests.swift` | `testSkipsPresentWhenNotDirty` | Verifies the pacer's callback is invoked but skips presentation when the dirty flag is false. | A pacer driven by a fake tick source; dirty flag false. | Zero `present` calls observed across 60 ticks. |
+| `DeskPadTests/Render/device_loss_recovery_tests.swift` | `testRebuildsPipelineOnDeviceLost` | Verifies the recovery utility constructs a new pipeline state when a `MTLCommandBufferError.deviceLost` is observed. | A synthetic command buffer error. | New pipeline state object distinct from the prior one. |
+| `DeskPadTests/Integration/coordinator_reconfigure_tests.swift` | `testReconfigureOnResolutionChange` | Verifies the coordinator calls `SCStream.updateConfiguration` on resolution change rather than restarting. | A coordinator with a stub stream; dispatched `ScreenConfigurationAction.set` event. | One `updateConfiguration` call, zero `stopCapture`/`startCapture` calls. |
+| `DeskPadTests/Integration/permission_revocation_tests.swift` | `testPermissionRevocationSurfacedAfterErrorBackoff` | Verifies that when restart attempts exhaust and `CGPreflightScreenCaptureAccess` returns false, the coordinator surfaces a permission-needed state. | Stream that errors permanently; preflight returning false. | Coordinator state transitions to `.permissionRequired`. |
+| `DeskPadTests/Performance/steady_state_latency_tests.swift` | `testSteadyStateLatencyUnder33ms` (Instruments-backed manual benchmark) | Measures average capture-to-present latency across 600 frames at 4K60. | Synthetic capture source emitting at 60 Hz. | Mean latency below 33 ms. |
+| `DeskPadTests/Performance/idle_gpu_zero_tests.swift` | `testIdleProducesNoNonCompositorGPUSubmissions` (Instruments-backed manual benchmark) | Verifies zero non-compositor GPU command-buffer submissions across 5 seconds of static content. | Idle virtual display. | Submission count equals 0. |
+
+### Tests to Modify
+
+| Test File | Test Name | Current Behavior | New Behavior | Reason for Change |
+|-----------|-----------|------------------|--------------|-------------------|
+| N/A | N/A | The project has no existing Swift test target. | A new `DeskPadTests` target is introduced in Phase 1. | There is no prior test code to modify. |
+
+### Tests to Remove
+
+| Test File | Test Name | Reason for Removal |
+|-----------|-----------|-------------------|
+| N/A | N/A | No existing tests cover the rendering pipeline; nothing to remove. |
+
+## Acceptance Criteria
+
+### AC-1: Stream uses ScreenCaptureKit
+
+```gherkin
+Given DeskPad is launched on macOS 14 or later with screen recording permission granted
+When the virtual display is created and the rendering pipeline starts
+Then the active capture is an SCStream
+  And no CGDisplayStream instance exists in the running process
+```
+
+### AC-2: Frame delivery is off the main thread
+
+```gherkin
+Given DeskPad is mirroring at 4K60
+When frames are delivered from the capture subsystem
+Then the SCStreamOutput callback runs on a non-main dispatch queue
+  And no IOSurface is assigned to any CALayer.contents property
+```
+
+### AC-3: Rendering uses Metal and CAMetalLayer
+
+```gherkin
+Given DeskPad is mirroring
+When the screen view is composited
+Then the view's backing layer is a CAMetalLayer
+  And the rendered drawable was produced by a Metal blit from an IOSurface-backed MTLTexture
+```
+
+### AC-4: Presentation is paced by a display link
+
+```gherkin
+Given DeskPad is mirroring on a ProMotion display configured for variable refresh
+When the host display advertises a 120 Hz refresh rate
+Then the rendering pipeline presents at up to 120 Hz
+  And presentation is driven by CADisplayLink or CAMetalDisplayLink, not by capture callbacks
+```
+
+### AC-5: Idle frames are suppressed
+
+```gherkin
+Given DeskPad is mirroring and the virtual display contents are static for 5 seconds
+When the display link ticks during that window
+Then zero non-compositor GPU command buffers are submitted by the renderer
+```
+
+### AC-6: Stream restarts on transient failure
+
+```gherkin
+Given the SCStream encounters a transient error
+When SCStreamDelegate.stream(_:didStopWithError:) fires
+Then the coordinator schedules a restart with exponential backoff
+  And the user-visible mirror resumes without manual intervention if recovery succeeds within 10 attempts
+```
+
+### AC-7: Permission revocation is surfaced
+
+```gherkin
+Given the user revokes screen recording permission while DeskPad is running
+When the next stream restart attempt fails and CGPreflightScreenCaptureAccess returns false
+Then the coordinator transitions to a permissionRequired state
+  And the application surfaces a user-visible prompt to re-grant permission
+```
+
+### AC-8: GPU device loss is recovered
+
+```gherkin
+Given the renderer observes MTLCommandBufferError.deviceLost
+When the device-loss recovery utility is invoked
+Then a new MTLDevice is acquired and the pipeline state is rebuilt
+  And mirroring resumes without restarting the application
+```
+
+### AC-9: Reconfiguration uses updateConfiguration
+
+```gherkin
+Given the virtual display's resolution changes mid-session
+When the coordinator handles the resolution change
+Then SCStream.updateConfiguration is called once
+  And no stopCapture/startCapture pair is observed
+```
+
+### AC-10: Structured logging persists to disk
+
+```gherkin
+Given the rendering pipeline emits a log line for any state transition
+When the line is written
+Then it appears in ~/Library/Logs/DeskPad/deskpad.log
+  And the line is prefixed with filename:line matching the source location of the call site
+```
+
+### AC-11: No em-dashes in introduced prose
+
+```gherkin
+Given any source file, docstring, comment, or documentation introduced by this change
+When the file is inspected
+Then the file contains zero U+2014 EM DASH characters and zero U+2013 EN DASH characters used as dashes
+```
+
+### AC-12: Small single-purpose files with @agents-index
+
+```gherkin
+Given any Swift file introduced by this change
+When the file is inspected
+Then it contains a top-level docstring with an @agents-index annotation
+  And the file is at most 200 lines of code
+```
+
+## Quality Standards Compliance
+
+### Build & Compilation
+
+- [ ] Code compiles with Xcode against the new deployment target without errors
+- [ ] No new compiler warnings introduced
+- [ ] Swift concurrency warnings under `-strict-concurrency=complete` reviewed
+      and either fixed or annotated with justification
+
+### Linting & Code Style
+
+- [ ] SwiftLint (if introduced) passes with zero warnings
+- [ ] Code follows project conventions: small single-purpose files, hierarchical
+      namespace naming, docstrings with `@agents-index` annotations
+- [ ] No em-dashes in introduced prose
+
+### Test Execution
+
+- [ ] The new `DeskPadTests` target builds and runs
+- [ ] All tests listed in "Tests to Add" pass
+- [ ] Performance benchmark tests meet the latency and idle-GPU thresholds
+
+### Documentation
+
+- [ ] `README.md` troubleshooting section updated for the new permission flow
+- [ ] Inline docstrings for all new files include intent, parameters, side
+      effects, and an `@agents-index` line
+- [ ] `.taxonomy` updated if any new domain noun is introduced (for example,
+      "CaptureRenderCoordinator", "DisplayLinkPacer")
+
+### Code Review
+
+- [ ] Changes submitted via pull request, one PR per implementation phase
+- [ ] PR title follows Conventional Commits format
+- [ ] Code review completed and approved
+- [ ] Changes squash-merged to maintain linear history
+
+### Verification Commands
+
+```bash
+# Build verification (CLI-first per project standards)
+xcodebuild -project DeskPad.xcodeproj -scheme DeskPad -configuration Debug build 2>&1 | tee build.log
+
+# Test execution
+xcodebuild -project DeskPad.xcodeproj -scheme DeskPad -destination "platform=macOS" test 2>&1 | tee test.log
+
+# Grep guard: ensure CGDisplayStream is gone after Phase 5
+grep -rn "CGDisplayStream" DeskPad/ && exit 1 || echo "OK: no CGDisplayStream references"
+
+# Grep guard: ensure no em-dashes in introduced files
+grep -rn $'—\|–' DeskPad/ && exit 1 || echo "OK: no em/en dashes"
+
+# Grep guard: every new file carries @agents-index
+grep -rL "@agents-index" DeskPad/Backend/Capture DeskPad/Backend/Render DeskPad/Frontend/Screen DeskPad/Logging
+```
+
+## Risks and Mitigation
+
+### Risk 1: Apple Silicon vs. Intel performance gap
+
+**Likelihood:** medium
+**Impact:** medium
+**Mitigation:** The zero-copy `IOSurface`-to-`MTLTexture` path is materially
+faster on Apple Silicon because of unified memory. On Intel Macs the texture
+upload becomes a discrete copy. The dirty-frame gate still saves the idle
+case. We will measure on at least one Intel reference machine and document
+acceptable thresholds; if Intel performance regresses against the legacy
+path, we will keep the legacy path conditionally compiled for Intel until the
+project drops Intel support.
+
+### Risk 2: Deployment target bump excludes current users
+
+**Likelihood:** medium
+**Impact:** high
+**Mitigation:** Default plan is to require macOS 14.0. If the project chooses
+to retain macOS 13.0 support, Phase 4 must conditionally fall back to
+`CGDisplayStream` on macOS 13, which complicates the cutover and forfeits
+some greenfield benefits. The trade is documented; the recommended posture is
+to require macOS 14.0 and publish a final macOS 13.0 release line from the
+prior code.
+
+### Risk 3: Private CGVirtualDisplay incompatibility with ScreenCaptureKit filters
+
+**Likelihood:** low
+**Impact:** high
+**Mitigation:** `SCContentFilter(display:excludingWindows:)` requires an
+`SCDisplay`. We need to confirm that the virtual display surfaces in
+`SCShareableContent.current.displays` keyed by its `CGDirectDisplayID`. Phase
+2 begins with a spike to verify this. If it does not, the fallback is
+`SCContentFilter(display:including:)` against the closest-match `SCDisplay`,
+or retaining `CGDisplayStream` solely for the virtual display while moving
+all other improvements forward. This spike happens before any code is
+deleted.
+
+### Risk 4: ProMotion variable refresh interactions with a fixed 60 Hz capture
+
+**Likelihood:** medium
+**Impact:** low
+**Mitigation:** The capture is configured to deliver at up to 60 Hz; the
+presentation pacer runs at up to the host display's native rate. The dirty
+flag ensures that presenting at 120 Hz with a 60 Hz source does not double
+the GPU cost.
+
+### Risk 5: Permission revocation polling drains battery
+
+**Likelihood:** low
+**Impact:** medium
+**Mitigation:** `CGPreflightScreenCaptureAccess` polling runs only while the
+stream is in an error/restart state, never during steady-state capture. The
+poll cadence is 2 Hz and is bounded by the 10-attempt restart cap.
+
+### Risk 6: Sandbox file-write restrictions on the log path
+
+**Likelihood:** low
+**Impact:** low
+**Mitigation:** `~/Library/Logs/DeskPad/` is within the sandbox container's
+writable area by default. Phase 1 verifies write access on first launch and
+falls back to `os.Logger` only if the file sink fails, logging that
+fallback once via `os.Logger`.
+
+## Dependencies
+
+* `ScreenCaptureKit.framework` (system, macOS 14.0 and later)
+* `Metal.framework`, `MetalKit.framework`, `QuartzCore` (system)
+* `os.Logger` (system)
+* Existing private `CGVirtualDisplay` bridging header
+  (`DeskPad/CGVirtualDisplayPrivate.h`); unchanged by this CR
+* No new third-party SwiftPM dependencies
+
+## Estimated Effort
+
+| Phase | Effort (engineer-days) |
+|-------|------------------------|
+| Phase 1: Logging foundation | 1 |
+| Phase 2: Capture subsystem | 3 |
+| Phase 3: Render subsystem | 4 |
+| Phase 4: Integration and lifecycle | 3 |
+| Phase 5: Cutover and cleanup | 1 |
+| Test target bootstrap and benchmarks | 2 |
+| Buffer for spikes, Intel verification, review | 2 |
+| **Total** | **16 engineer-days** |
+
+## Decision Outcome
+
+Chosen approach: "ScreenCaptureKit `SCStream` capture plus `CAMetalLayer`
+rendering with `CADisplayLink` pacing and dirty-frame gating," because it
+combines the only supported capture API with the zero-copy `IOSurface`-to-Metal
+path that Apple Silicon was built for, gives us explicit control over pacing
+and idle suppression, and lets us decompose the rendering responsibilities
+into small testable units that the project owner's coding standards require.
+
+## Open Questions
+
+* Should the project commit to macOS 14.0 as the new minimum, or retain
+  macOS 13.0 with a conditional fallback to `CGDisplayStream`? The CR is
+  written assuming macOS 14.0; the Risks section captures the alternative.
+  **Assumption:** macOS 14.0 minimum.
+* Does `SCShareableContent.current.displays` enumerate the
+  `CGVirtualDisplay` reliably? Phase 2 begins with a spike to verify.
+  **Assumption:** yes; Risk 3 captures the fallback.
+* Does the project want a SwiftLint configuration introduced as part of
+  Phase 1, or is the existing review process sufficient for style?
+  **Assumption:** no SwiftLint introduction in this CR.
+
+## More Information
+
+* Apple documentation for `ScreenCaptureKit`:
+  https://developer.apple.com/documentation/screencapturekit
+* `CGDisplayStream` deprecation note:
+  https://developer.apple.com/documentation/coregraphics/cgdisplaystream
+* Apple sample "Capturing screen content in macOS":
+  https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos
+* `CAMetalDisplayLink`:
+  https://developer.apple.com/documentation/quartzcore/cametaldisplaylink
+* DeskPad current pipeline reference:
+  `DeskPad/Frontend/Screen/ScreenViewController.swift`
