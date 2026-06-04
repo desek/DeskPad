@@ -32,6 +32,14 @@
 		7A00000000000000000C0014 /* stream_configuration_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0005 /* stream_configuration_tests.swift */; };
 		7A00000000000000000C0015 /* stream_output_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0006 /* stream_output_tests.swift */; };
 		7A00000000000000000C0016 /* stream_coordinator_restart_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0007 /* stream_coordinator_restart_tests.swift */; };
+		7A00000000000000000D0010 /* render.metal_layer_host_view.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000D0001 /* render.metal_layer_host_view.swift */; };
+		7A00000000000000000D0011 /* render.iosurface_texture_cache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000D0002 /* render.iosurface_texture_cache.swift */; };
+		7A00000000000000000D0012 /* render.blit_pipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000D0003 /* render.blit_pipeline.swift */; };
+		7A00000000000000000D0013 /* render.display_link_pacer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000D0004 /* render.display_link_pacer.swift */; };
+		7A00000000000000000D0014 /* render.device_loss_recovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000D0005 /* render.device_loss_recovery.swift */; };
+		7A00000000000000000D0020 /* iosurface_texture_cache_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000D0006 /* iosurface_texture_cache_tests.swift */; };
+		7A00000000000000000D0021 /* display_link_pacer_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000D0007 /* display_link_pacer_tests.swift */; };
+		7A00000000000000000D0022 /* device_loss_recovery_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000D0008 /* device_loss_recovery_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -64,6 +72,14 @@
 		7A00000000000000000C0005 /* stream_configuration_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = stream_configuration_tests.swift; sourceTree = "<group>"; };
 		7A00000000000000000C0006 /* stream_output_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = stream_output_tests.swift; sourceTree = "<group>"; };
 		7A00000000000000000C0007 /* stream_coordinator_restart_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = stream_coordinator_restart_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000D0001 /* render.metal_layer_host_view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.metal_layer_host_view.swift; sourceTree = "<group>"; };
+		7A00000000000000000D0002 /* render.iosurface_texture_cache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.iosurface_texture_cache.swift; sourceTree = "<group>"; };
+		7A00000000000000000D0003 /* render.blit_pipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.blit_pipeline.swift; sourceTree = "<group>"; };
+		7A00000000000000000D0004 /* render.display_link_pacer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.display_link_pacer.swift; sourceTree = "<group>"; };
+		7A00000000000000000D0005 /* render.device_loss_recovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.device_loss_recovery.swift; sourceTree = "<group>"; };
+		7A00000000000000000D0006 /* iosurface_texture_cache_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iosurface_texture_cache_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000D0007 /* display_link_pacer_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = display_link_pacer_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000D0008 /* device_loss_recovery_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = device_loss_recovery_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +110,7 @@
 				6D68E1AD287ABB6F00CD574A /* ScreenConfiguration */,
 				6D41B09D2879FA87007CEB2F /* MouseLocation */,
 				7A00000000000000000C0008 /* Capture */,
+				7A00000000000000000D0009 /* Render */,
 			);
 			path = Backend;
 			sourceTree = "<group>";
@@ -141,8 +158,30 @@
 			children = (
 				6D2F148D280C211E00A3A2E5 /* ScreenViewController.swift */,
 				6D41B0A32879FBA8007CEB2F /* ScreenViewData.swift */,
+				7A00000000000000000D0001 /* render.metal_layer_host_view.swift */,
 			);
 			path = Screen;
+			sourceTree = "<group>";
+		};
+		7A00000000000000000D0009 /* Render */ = {
+			isa = PBXGroup;
+			children = (
+				7A00000000000000000D0002 /* render.iosurface_texture_cache.swift */,
+				7A00000000000000000D0003 /* render.blit_pipeline.swift */,
+				7A00000000000000000D0004 /* render.display_link_pacer.swift */,
+				7A00000000000000000D0005 /* render.device_loss_recovery.swift */,
+			);
+			path = Render;
+			sourceTree = "<group>";
+		};
+		7A00000000000000000D000A /* Render */ = {
+			isa = PBXGroup;
+			children = (
+				7A00000000000000000D0006 /* iosurface_texture_cache_tests.swift */,
+				7A00000000000000000D0007 /* display_link_pacer_tests.swift */,
+				7A00000000000000000D0008 /* device_loss_recovery_tests.swift */,
+			);
+			path = Render;
 			sourceTree = "<group>";
 		};
 		6D68E1AD287ABB6F00CD574A /* ScreenConfiguration */ = {
@@ -194,6 +233,7 @@
 			children = (
 				7A00000000000000000B0004 /* Logging */,
 				7A00000000000000000C0009 /* Capture */,
+				7A00000000000000000D000A /* Render */,
 			);
 			path = DeskPadTests;
 			sourceTree = "<group>";
@@ -388,6 +428,11 @@
 				7A00000000000000000C0011 /* capture.stream_configuration.swift in Sources */,
 				7A00000000000000000C0012 /* capture.stream_output.swift in Sources */,
 				7A00000000000000000C0013 /* capture.stream_coordinator.swift in Sources */,
+				7A00000000000000000D0010 /* render.metal_layer_host_view.swift in Sources */,
+				7A00000000000000000D0011 /* render.iosurface_texture_cache.swift in Sources */,
+				7A00000000000000000D0012 /* render.blit_pipeline.swift in Sources */,
+				7A00000000000000000D0013 /* render.display_link_pacer.swift in Sources */,
+				7A00000000000000000D0014 /* render.device_loss_recovery.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -399,6 +444,9 @@
 				7A00000000000000000C0014 /* stream_configuration_tests.swift in Sources */,
 				7A00000000000000000C0015 /* stream_output_tests.swift in Sources */,
 				7A00000000000000000C0016 /* stream_coordinator_restart_tests.swift in Sources */,
+				7A00000000000000000D0020 /* iosurface_texture_cache_tests.swift in Sources */,
+				7A00000000000000000D0021 /* display_link_pacer_tests.swift in Sources */,
+				7A00000000000000000D0022 /* device_loss_recovery_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
