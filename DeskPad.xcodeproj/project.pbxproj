@@ -25,6 +25,13 @@
 		7A00000000000000000A0004 /* agents.log.logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000A0002 /* agents.log.logger.swift */; };
 		7A00000000000000000A0005 /* agents.log.file_sink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000A0003 /* agents.log.file_sink.swift */; };
 		7A00000000000000000B0006 /* log_format_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000B0005 /* log_format_tests.swift */; };
+		7A00000000000000000C0010 /* capture.virtual_display_filter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0001 /* capture.virtual_display_filter.swift */; };
+		7A00000000000000000C0011 /* capture.stream_configuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0002 /* capture.stream_configuration.swift */; };
+		7A00000000000000000C0012 /* capture.stream_output.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0003 /* capture.stream_output.swift */; };
+		7A00000000000000000C0013 /* capture.stream_coordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0004 /* capture.stream_coordinator.swift */; };
+		7A00000000000000000C0014 /* stream_configuration_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0005 /* stream_configuration_tests.swift */; };
+		7A00000000000000000C0015 /* stream_output_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0006 /* stream_output_tests.swift */; };
+		7A00000000000000000C0016 /* stream_coordinator_restart_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000C0007 /* stream_coordinator_restart_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +57,13 @@
 		7A00000000000000000A0003 /* agents.log.file_sink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = agents.log.file_sink.swift; sourceTree = "<group>"; };
 		7A00000000000000000B0002 /* DeskPadTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DeskPadTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A00000000000000000B0005 /* log_format_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = log_format_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000C0001 /* capture.virtual_display_filter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = capture.virtual_display_filter.swift; sourceTree = "<group>"; };
+		7A00000000000000000C0002 /* capture.stream_configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = capture.stream_configuration.swift; sourceTree = "<group>"; };
+		7A00000000000000000C0003 /* capture.stream_output.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = capture.stream_output.swift; sourceTree = "<group>"; };
+		7A00000000000000000C0004 /* capture.stream_coordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = capture.stream_coordinator.swift; sourceTree = "<group>"; };
+		7A00000000000000000C0005 /* stream_configuration_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = stream_configuration_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000C0006 /* stream_output_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = stream_output_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000C0007 /* stream_coordinator_restart_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = stream_coordinator_restart_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,8 +93,30 @@
 				6D2F1489280C20D000A3A2E5 /* Store.swift */,
 				6D68E1AD287ABB6F00CD574A /* ScreenConfiguration */,
 				6D41B09D2879FA87007CEB2F /* MouseLocation */,
+				7A00000000000000000C0008 /* Capture */,
 			);
 			path = Backend;
+			sourceTree = "<group>";
+		};
+		7A00000000000000000C0008 /* Capture */ = {
+			isa = PBXGroup;
+			children = (
+				7A00000000000000000C0001 /* capture.virtual_display_filter.swift */,
+				7A00000000000000000C0002 /* capture.stream_configuration.swift */,
+				7A00000000000000000C0003 /* capture.stream_output.swift */,
+				7A00000000000000000C0004 /* capture.stream_coordinator.swift */,
+			);
+			path = Capture;
+			sourceTree = "<group>";
+		};
+		7A00000000000000000C0009 /* Capture */ = {
+			isa = PBXGroup;
+			children = (
+				7A00000000000000000C0005 /* stream_configuration_tests.swift */,
+				7A00000000000000000C0006 /* stream_output_tests.swift */,
+				7A00000000000000000C0007 /* stream_coordinator_restart_tests.swift */,
+			);
+			path = Capture;
 			sourceTree = "<group>";
 		};
 		6D2F1484280C202700A3A2E5 /* Frontend */ = {
@@ -157,6 +193,7 @@
 			isa = PBXGroup;
 			children = (
 				7A00000000000000000B0004 /* Logging */,
+				7A00000000000000000C0009 /* Capture */,
 			);
 			path = DeskPadTests;
 			sourceTree = "<group>";
@@ -347,6 +384,10 @@
 				6DC04461280191EB00281728 /* main.swift in Sources */,
 				7A00000000000000000A0004 /* agents.log.logger.swift in Sources */,
 				7A00000000000000000A0005 /* agents.log.file_sink.swift in Sources */,
+				7A00000000000000000C0010 /* capture.virtual_display_filter.swift in Sources */,
+				7A00000000000000000C0011 /* capture.stream_configuration.swift in Sources */,
+				7A00000000000000000C0012 /* capture.stream_output.swift in Sources */,
+				7A00000000000000000C0013 /* capture.stream_coordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -355,6 +396,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				7A00000000000000000B0006 /* log_format_tests.swift in Sources */,
+				7A00000000000000000C0014 /* stream_configuration_tests.swift in Sources */,
+				7A00000000000000000C0015 /* stream_output_tests.swift in Sources */,
+				7A00000000000000000C0016 /* stream_coordinator_restart_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -412,7 +456,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -468,7 +512,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -492,6 +536,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "DeskPad mirrors a virtual display into the app window using ScreenCaptureKit.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -500,7 +545,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.stengo.DeskPad;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -518,6 +564,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "DeskPad mirrors a virtual display into the app window using ScreenCaptureKit.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -526,7 +573,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.stengo.DeskPad;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};

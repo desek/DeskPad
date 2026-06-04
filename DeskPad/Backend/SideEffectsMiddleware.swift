@@ -1,14 +1,14 @@
 import Foundation
-import ReSwift
+@preconcurrency import ReSwift
 
 typealias SideEffect = (Action, @escaping DispatchFunction, @escaping () -> AppState?) -> Void
 
-private let sideEffects: [SideEffect] = [
+private nonisolated(unsafe) let sideEffects: [SideEffect] = [
     mouseLocationSideEffect(),
     screenConfigurationSideEffect(),
 ]
 
-let sideEffectsMiddleware: Middleware<AppState> = { dispatch, getState in
+nonisolated(unsafe) let sideEffectsMiddleware: Middleware<AppState> = { dispatch, getState in
     { originalDispatch in
         { action in
             originalDispatch(action)

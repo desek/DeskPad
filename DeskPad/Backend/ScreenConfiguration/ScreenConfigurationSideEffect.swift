@@ -1,7 +1,7 @@
 import Foundation
-import ReSwift
+@preconcurrency import ReSwift
 
-private var isObserving = false
+private nonisolated(unsafe) var isObserving = false
 
 enum ScreenConfigurationAction: Action {
     case set(resolution: CGSize, scaleFactor: CGFloat)

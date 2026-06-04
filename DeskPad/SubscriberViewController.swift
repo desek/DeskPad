@@ -1,7 +1,7 @@
 import AppKit
-import ReSwift
+@preconcurrency import ReSwift
 
-class SubscriberViewController<ViewData: ViewDataType>: NSViewController, StoreSubscriber {
+class SubscriberViewController<ViewData: ViewDataType>: NSViewController, @preconcurrency StoreSubscriber {
     typealias StoreSubscriberStateType = ViewData.StateFragment
 
     override func viewWillAppear() {

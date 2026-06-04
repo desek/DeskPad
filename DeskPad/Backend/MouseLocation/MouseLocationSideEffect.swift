@@ -1,7 +1,7 @@
 import Foundation
-import ReSwift
+@preconcurrency import ReSwift
 
-private var timer: Timer?
+private nonisolated(unsafe) var timer: Timer?
 
 enum MouseLocationAction: Action {
     case located(isWithinScreen: Bool)

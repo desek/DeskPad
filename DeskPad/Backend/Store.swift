@@ -1,7 +1,7 @@
 import Foundation
-import ReSwift
+@preconcurrency import ReSwift
 
-let store = Store<AppState>(
+nonisolated(unsafe) let store = Store<AppState>(
     reducer: appReducer,
     state: AppState.initialState,
     middleware: [

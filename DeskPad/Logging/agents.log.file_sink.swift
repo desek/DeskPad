@@ -172,7 +172,7 @@ public final class LogFileSink: @unchecked Sendable {
     /// ISO-8601 timestamp formatter shared across writes. Recreating the
     /// formatter per call would dominate the write cost on a hot logging
     /// path.
-    private static let timestampFormatter: ISO8601DateFormatter = {
+    private nonisolated(unsafe) static let timestampFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f

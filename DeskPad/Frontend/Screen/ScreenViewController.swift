@@ -13,7 +13,12 @@ class ScreenViewController: SubscriberViewController<ScreenViewData>, NSWindowDe
     }
 
     private var display: CGVirtualDisplay!
-    private var stream: CGDisplayStream?
+    // NOTE: The CGDisplayStream-backed `stream` field is retained as `Any?` for
+    // the lifetime of Phase 2/3 of CR-0001. CGDisplayStream is unavailable in
+    // the macOS 15 SDK and the legacy path is deleted in Phase 4 when the new
+    // ScreenCaptureKit + Metal coordinator is wired in. Until then, mirroring
+    // is temporarily inert (the field is never assigned).
+    private var stream: Any?
     private var isWindowHighlighted = false
     private var previousResolution: CGSize?
     private var previousScaleFactor: CGFloat?
@@ -83,23 +88,10 @@ class ScreenViewController: SubscriberViewController<ScreenViewData>, NSWindowDe
             view.window?.setContentSize(viewData.resolution)
             view.window?.contentAspectRatio = viewData.resolution
             view.window?.center()
-            let stream = CGDisplayStream(
-                dispatchQueueDisplay: display.displayID,
-                outputWidth: Int(viewData.resolution.width * viewData.scaleFactor),
-                outputHeight: Int(viewData.resolution.height * viewData.scaleFactor),
-                pixelFormat: 1_111_970_369,
-                properties: [
-                    CGDisplayStream.showCursor: true,
-                ] as CFDictionary,
-                queue: .main,
-                handler: { [weak self] _, _, frameSurface, _ in
-                    if let surface = frameSurface {
-                        self?.view.layer?.contents = surface
-                    }
-                }
-            )
-            self.stream = stream
-            stream?.start()
+            // CR-0001 Phase 2: the CGDisplayStream initialiser, `showCursor`
+            // property, and `start()` are unavailable on the macOS 15 SDK.
+            // The new ScreenCaptureKit + Metal pipeline is wired in by Phase 4;
+            // until that lands, mirroring is intentionally inert.
         }
     }
 
