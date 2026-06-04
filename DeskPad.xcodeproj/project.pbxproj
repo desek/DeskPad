@@ -44,6 +44,17 @@
 		7A00000000000000000E0011 /* screen.capture_render_coordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000E0002 /* screen.capture_render_coordinator.swift */; };
 		7A00000000000000000E0020 /* coordinator_reconfigure_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000E0003 /* coordinator_reconfigure_tests.swift */; };
 		7A00000000000000000E0021 /* permission_revocation_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000E0004 /* permission_revocation_tests.swift */; };
+		7A00000000000000000F0010 /* screen.permission_probe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0001 /* screen.permission_probe.swift */; };
+		7A00000000000000000F0011 /* screen.permission_watcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0002 /* screen.permission_watcher.swift */; };
+		7A00000000000000000F0012 /* capture.live_stream_handle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0003 /* capture.live_stream_handle.swift */; };
+		7A00000000000000000F0013 /* render.frame_presenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0004 /* render.frame_presenter.swift */; };
+		7A00000000000000000F0020 /* newest_frame_wins_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0005 /* newest_frame_wins_tests.swift */; };
+		7A00000000000000000F0021 /* adaptive_mode_switch_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0006 /* adaptive_mode_switch_tests.swift */; };
+		7A00000000000000000F0022 /* mouse_location_behaviour_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0007 /* mouse_location_behaviour_tests.swift */; };
+		7A00000000000000000F0023 /* idle_gpu_zero_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0008 /* idle_gpu_zero_tests.swift */; };
+		7A00000000000000000F0024 /* interactive_latency_budget_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0009 /* interactive_latency_budget_tests.swift */; };
+		7A00000000000000000F0025 /* refresh_mismatch_pacing_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F000A /* refresh_mismatch_pacing_tests.swift */; };
+		7A00000000000000000F0026 /* steady_state_latency_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F000B /* steady_state_latency_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -88,6 +99,17 @@
 		7A00000000000000000E0002 /* screen.capture_render_coordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = screen.capture_render_coordinator.swift; sourceTree = "<group>"; };
 		7A00000000000000000E0003 /* coordinator_reconfigure_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = coordinator_reconfigure_tests.swift; sourceTree = "<group>"; };
 		7A00000000000000000E0004 /* permission_revocation_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = permission_revocation_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000F0001 /* screen.permission_probe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = screen.permission_probe.swift; sourceTree = "<group>"; };
+		7A00000000000000000F0002 /* screen.permission_watcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = screen.permission_watcher.swift; sourceTree = "<group>"; };
+		7A00000000000000000F0003 /* capture.live_stream_handle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = capture.live_stream_handle.swift; sourceTree = "<group>"; };
+		7A00000000000000000F0004 /* render.frame_presenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.frame_presenter.swift; sourceTree = "<group>"; };
+		7A00000000000000000F0005 /* newest_frame_wins_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = newest_frame_wins_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000F0006 /* adaptive_mode_switch_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = adaptive_mode_switch_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000F0007 /* mouse_location_behaviour_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = mouse_location_behaviour_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000F0008 /* idle_gpu_zero_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = idle_gpu_zero_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000F0009 /* interactive_latency_budget_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = interactive_latency_budget_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000F000A /* refresh_mismatch_pacing_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = refresh_mismatch_pacing_tests.swift; sourceTree = "<group>"; };
+		7A00000000000000000F000B /* steady_state_latency_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = steady_state_latency_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -131,6 +153,7 @@
 				7A00000000000000000C0003 /* capture.stream_output.swift */,
 				7A00000000000000000C0004 /* capture.stream_coordinator.swift */,
 				7A00000000000000000E0001 /* capture.virtual_display_factory.swift */,
+				7A00000000000000000F0003 /* capture.live_stream_handle.swift */,
 			);
 			path = Capture;
 			sourceTree = "<group>";
@@ -169,6 +192,8 @@
 				6D41B0A32879FBA8007CEB2F /* ScreenViewData.swift */,
 				7A00000000000000000D0001 /* render.metal_layer_host_view.swift */,
 				7A00000000000000000E0002 /* screen.capture_render_coordinator.swift */,
+				7A00000000000000000F0001 /* screen.permission_probe.swift */,
+				7A00000000000000000F0002 /* screen.permission_watcher.swift */,
 			);
 			path = Screen;
 			sourceTree = "<group>";
@@ -180,6 +205,7 @@
 				7A00000000000000000D0003 /* render.blit_pipeline.swift */,
 				7A00000000000000000D0004 /* render.display_link_pacer.swift */,
 				7A00000000000000000D0005 /* render.device_loss_recovery.swift */,
+				7A00000000000000000F0004 /* render.frame_presenter.swift */,
 			);
 			path = Render;
 			sourceTree = "<group>";
@@ -190,8 +216,20 @@
 				7A00000000000000000D0006 /* iosurface_texture_cache_tests.swift */,
 				7A00000000000000000D0007 /* display_link_pacer_tests.swift */,
 				7A00000000000000000D0008 /* device_loss_recovery_tests.swift */,
+				7A00000000000000000F0005 /* newest_frame_wins_tests.swift */,
 			);
 			path = Render;
+			sourceTree = "<group>";
+		};
+		7A00000000000000000F000C /* Performance */ = {
+			isa = PBXGroup;
+			children = (
+				7A00000000000000000F0008 /* idle_gpu_zero_tests.swift */,
+				7A00000000000000000F0009 /* interactive_latency_budget_tests.swift */,
+				7A00000000000000000F000A /* refresh_mismatch_pacing_tests.swift */,
+				7A00000000000000000F000B /* steady_state_latency_tests.swift */,
+			);
+			path = Performance;
 			sourceTree = "<group>";
 		};
 		6D68E1AD287ABB6F00CD574A /* ScreenConfiguration */ = {
@@ -245,6 +283,7 @@
 				7A00000000000000000C0009 /* Capture */,
 				7A00000000000000000D000A /* Render */,
 				7A00000000000000000E0005 /* Integration */,
+				7A00000000000000000F000C /* Performance */,
 			);
 			path = DeskPadTests;
 			sourceTree = "<group>";
@@ -254,6 +293,8 @@
 			children = (
 				7A00000000000000000E0003 /* coordinator_reconfigure_tests.swift */,
 				7A00000000000000000E0004 /* permission_revocation_tests.swift */,
+				7A00000000000000000F0006 /* adaptive_mode_switch_tests.swift */,
+				7A00000000000000000F0007 /* mouse_location_behaviour_tests.swift */,
 			);
 			path = Integration;
 			sourceTree = "<group>";
@@ -455,6 +496,10 @@
 				7A00000000000000000D0014 /* render.device_loss_recovery.swift in Sources */,
 				7A00000000000000000E0010 /* capture.virtual_display_factory.swift in Sources */,
 				7A00000000000000000E0011 /* screen.capture_render_coordinator.swift in Sources */,
+				7A00000000000000000F0010 /* screen.permission_probe.swift in Sources */,
+				7A00000000000000000F0011 /* screen.permission_watcher.swift in Sources */,
+				7A00000000000000000F0012 /* capture.live_stream_handle.swift in Sources */,
+				7A00000000000000000F0013 /* render.frame_presenter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -471,6 +516,13 @@
 				7A00000000000000000D0022 /* device_loss_recovery_tests.swift in Sources */,
 				7A00000000000000000E0020 /* coordinator_reconfigure_tests.swift in Sources */,
 				7A00000000000000000E0021 /* permission_revocation_tests.swift in Sources */,
+				7A00000000000000000F0020 /* newest_frame_wins_tests.swift in Sources */,
+				7A00000000000000000F0021 /* adaptive_mode_switch_tests.swift in Sources */,
+				7A00000000000000000F0022 /* mouse_location_behaviour_tests.swift in Sources */,
+				7A00000000000000000F0023 /* idle_gpu_zero_tests.swift in Sources */,
+				7A00000000000000000F0024 /* interactive_latency_budget_tests.swift in Sources */,
+				7A00000000000000000F0025 /* refresh_mismatch_pacing_tests.swift in Sources */,
+				7A00000000000000000F0026 /* steady_state_latency_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

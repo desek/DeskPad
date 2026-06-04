@@ -19,7 +19,7 @@ final class DisplayLinkPacerTests: XCTestCase {
     /// invoked.
     func testSkipsPresentWhenNotDirty() {
         var presentCalls = 0
-        let pacer = DisplayLinkPacer(present: { presentCalls += 1 })
+        let pacer = DisplayLinkPacer(present: { _ in presentCalls += 1 })
 
         for _ in 0 ..< 60 { pacer.tick() }
 
@@ -33,7 +33,7 @@ final class DisplayLinkPacerTests: XCTestCase {
     /// without a fresh `markDirty()` is suppressed.
     func testPresentsOncePerDirtyTransition() {
         var presentCalls = 0
-        let pacer = DisplayLinkPacer(present: { presentCalls += 1 })
+        let pacer = DisplayLinkPacer(present: { _ in presentCalls += 1 })
 
         pacer.markDirty()
         pacer.tick()

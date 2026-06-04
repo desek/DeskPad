@@ -54,7 +54,7 @@ class ScreenViewController: SubscriberViewController<ScreenViewData>, NSWindowDe
             host.topAnchor.constraint(equalTo: view.topAnchor),
             host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        coordinator.pacer.attach(toHostView: host)
+        coordinator.pacer.attach(toMetalLayer: host.metalLayer)
         ScreenConfigurationEvents.shared.subscribe { [weak coordinator] event in
             guard let coordinator else { return }
             Task { @MainActor in

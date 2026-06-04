@@ -5,14 +5,9 @@
 //  @agents-index `SCStreamOutput` + `SCStreamDelegate` implementation that
 //  extracts the zero-copy `IOSurface` from each delivered `CMSampleBuffer` via
 //  `CVPixelBufferGetIOSurface` and atomically publishes it for the renderer
-//  to consume on the next display-link tick.
-//
-//  Only the most recent surface matters — DeskPad mirrors, it does not
-//  buffer — so the publish slot is a single atomic reference rather than a
-//  queue. The renderer reads via `latestSurface` from the main / render
-//  thread; the SCK output queue writes here from a background queue. The
-//  cross-thread hand-off goes through an `OSAllocatedUnfairLock` so the
-//  swap is a couple of nanoseconds with no allocation.
+//  to consume on the next display-link tick. Also stamps the host-time at
+//  ingest (FR-15 latency budget) and tracks an arrival-rate EMA (FR-18
+//  adaptive mode switching).
 //
 
 import CoreMedia
@@ -20,42 +15,87 @@ import CoreVideo
 import Foundation
 @preconcurrency import IOSurface
 import os
+import QuartzCore
 import ScreenCaptureKit
+
+/// Most-recent surface plus its ingest timestamp, used by the renderer
+/// to compute capture-to-present latency (FR-15 / AC-13).
+public struct CapturedSurface: Sendable {
+    public let surface: IOSurface
+    /// `CACurrentMediaTime()` recorded the moment the SCK delivery
+    /// callback ran. Subtracting from the present time gives the
+    /// end-to-end capture-to-present latency.
+    public let ingestHostTime: CFTimeInterval
+}
 
 /// Stream output that captures the most recent `IOSurface` delivered by an
 /// `SCStream` and exposes it via `latestSurface`. Also reports delegate
 /// errors (`SCStreamDelegate.stream(_:didStopWithError:)`) by invoking
 /// `onStopError` so the coordinator can drive backoff/restart.
-///
-/// Marked `@unchecked Sendable` because it is reference type whose mutable
-/// state is guarded entirely by `lock`; this is the established pattern for
-/// SCK output classes that need to be retained by `SCStream` (which is itself
-/// Objective-C and not `Sendable`).
 public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     /// Closure invoked when the stream stops with an error. Captured by the
     /// coordinator to drive exponential-backoff restart.
     public typealias StopErrorHandler = @Sendable (any Error) -> Void
 
     private let log = Logger(category: "capture")
-    private let lock = OSAllocatedUnfairLock<IOSurface?>(initialState: nil)
-    private let stopErrorHandler: StopErrorHandler?
+    private let lock = OSAllocatedUnfairLock<CapturedSurface?>(initialState: nil)
+    private let metricsLock = OSAllocatedUnfairLock<ArrivalMetrics>(initialState: ArrivalMetrics())
+    private let handlerLock = OSAllocatedUnfairLock<Handlers>(initialState: Handlers())
 
-    /// Build a stream output.
-    ///
-    /// - Parameter onStopError: Invoked from the SCK delegate queue when the
-    ///   stream reports an unrecoverable error. The closure is responsible
-    ///   for any thread-hop; the call site here makes no assumptions.
-    public init(onStopError: StopErrorHandler? = nil) {
-        stopErrorHandler = onStopError
-        super.init()
+    /// Mutable handler bundle so the coordinator can wire stop-error
+    /// and per-arrival callbacks after `StreamOutput` is constructed.
+    /// Held under `handlerLock` so the SCK delivery queue and the main
+    /// actor's writer side cannot race.
+    private struct Handlers: Sendable {
+        var stopErrorHandler: StopErrorHandler?
+        var onArrival: (@Sendable () -> Void)?
     }
 
-    /// Latest `IOSurface` published by the SCK output queue, or `nil` if no
-    /// frame has yet been delivered. Snapshotted under `lock`; the returned
-    /// reference is retained, so the caller can safely consume it after the
-    /// lock has been released.
-    public var latestSurface: IOSurface? {
+    private let initialStopErrorHandler: StopErrorHandler?
+
+    /// Snapshot of the EMA of inter-arrival intervals (seconds) plus the
+    /// last-seen ingest timestamp. The coordinator's adaptive-mode logic
+    /// (FR-18) reads `intervalEMA` to decide whether to switch modes.
+    public struct ArrivalMetrics: Sendable {
+        public var intervalEMA: Double = 0
+        public var lastIngestHostTime: CFTimeInterval = 0
+        public var sampleCount: Int = 0
+    }
+
+    public init(onStopError: StopErrorHandler? = nil) {
+        initialStopErrorHandler = onStopError
+        super.init()
+        handlerLock.withLock { $0.stopErrorHandler = onStopError }
+    }
+
+    /// Replace the stop-error handler post-construction. Used by the
+    /// coordinator to wire the FR-7 / AC-6 restart trigger after the
+    /// output has been built.
+    public func setStopErrorHandler(_ handler: StopErrorHandler?) {
+        handlerLock.withLock { $0.stopErrorHandler = handler }
+    }
+
+    /// Install a per-arrival callback. The renderer wires this to
+    /// `pacer.markDirty()` so a freshly-arrived `IOSurface` lifts the
+    /// FR-5 dirty bit and the next display-link tick presents.
+    public func setOnArrival(_ handler: (@Sendable () -> Void)?) {
+        handlerLock.withLock { $0.onArrival = handler }
+    }
+
+    /// Latest captured surface bundle (`IOSurface` + ingest timestamp).
+    public var latestCapturedSurface: CapturedSurface? {
         lock.withLock { $0 }
+    }
+
+    /// Backwards-compatible accessor: returns just the surface for
+    /// existing callers that do not need the ingest timestamp.
+    public var latestSurface: IOSurface? {
+        lock.withLock { $0?.surface }
+    }
+
+    /// Snapshot the arrival-rate metrics under the metrics lock.
+    public var arrivalMetrics: ArrivalMetrics {
+        metricsLock.withLock { $0 }
     }
 
     /// Test-only entry point: synthesise the delivery path with a caller-
@@ -71,14 +111,18 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
     public func publishForTest(pixelBuffer: CVPixelBuffer) {
         guard let surfaceRef = CVPixelBufferGetIOSurface(pixelBuffer) else { return }
         let surface = surfaceRef.takeUnretainedValue()
-        lock.withLock { $0 = surface }
+        publish(surface: surface)
+    }
+
+    /// Test-only: drive the arrival-rate EMA from an explicit timestamp
+    /// stream so `adaptive_mode_switch_tests.swift` can assert mode
+    /// transitions deterministically without scheduling real frames.
+    public func publishForTest(syntheticIngestHostTime: CFTimeInterval) {
+        updateArrival(at: syntheticIngestHostTime)
     }
 
     // MARK: - SCStreamOutput
 
-    /// SCK delivery callback. Only `.screen` samples carry pixel data; audio
-    /// and microphone outputs are ignored because DeskPad does not capture
-    /// them.
     public func stream(
         _: SCStream,
         didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
@@ -90,23 +134,47 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
 
     // MARK: - SCStreamDelegate
 
-    /// SCK delegate callback fired when the stream stops (gracefully or
-    /// otherwise). Forwarded verbatim to the configured stop-error handler.
     public func stream(_: SCStream, didStopWithError error: any Error) {
         log.error("SCStream stopped: \(error.localizedDescription)")
-        stopErrorHandler?(error)
+        let handler = handlerLock.withLock { $0.stopErrorHandler }
+        handler?(error)
     }
 
     // MARK: - Private
 
-    /// Extract the `IOSurface` from `sampleBuffer` (via
-    /// `CVPixelBufferGetIOSurface`) and atomically publish it. Drops the
-    /// sample silently if it lacks an attached surface; this can happen for
-    /// the first frame on some macOS revisions.
     private func ingest(_ sampleBuffer: CMSampleBuffer) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         guard let surfaceRef = CVPixelBufferGetIOSurface(pixelBuffer) else { return }
         let surface = surfaceRef.takeUnretainedValue()
-        lock.withLock { $0 = surface }
+        publish(surface: surface)
+    }
+
+    private func publish(surface: IOSurface) {
+        let now = CACurrentMediaTime()
+        lock.withLock { $0 = CapturedSurface(surface: surface, ingestHostTime: now) }
+        updateArrival(at: now)
+        let onArrival = handlerLock.withLock { $0.onArrival }
+        onArrival?()
+    }
+
+    /// EMA update for inter-arrival intervals. Alpha 0.1 trades some
+    /// reactivity for less jitter; the adaptive-mode logic only acts on
+    /// sustained changes so a slow EMA is preferred.
+    private func updateArrival(at hostTime: CFTimeInterval) {
+        metricsLock.withLock { metrics in
+            defer {
+                metrics.lastIngestHostTime = hostTime
+                metrics.sampleCount += 1
+            }
+            guard metrics.lastIngestHostTime > 0 else { return }
+            let delta = hostTime - metrics.lastIngestHostTime
+            guard delta > 0 else { return }
+            if metrics.intervalEMA == 0 {
+                metrics.intervalEMA = delta
+            } else {
+                let alpha = 0.1
+                metrics.intervalEMA = alpha * delta + (1 - alpha) * metrics.intervalEMA
+            }
+        }
     }
 }

@@ -149,4 +149,38 @@ public actor StreamCoordinator {
         }
         state = .failed
     }
+
+    /// Drive the restart schedule against the installed handle. Walks
+    /// attempts 1...maxAttempts, sleeping per `backoffDelay(forAttempt:)`
+    /// between attempts and calling `handle.startStream()` each time.
+    /// Transitions to `.running` on first success and `.failed` after
+    /// the budget is exhausted. Called from the coordinator's
+    /// `onStopError` hook so a delegate error in production drives the
+    /// FR-7 / AC-6 backoff at runtime.
+    public func runRestartSchedule() async {
+        guard let handle else {
+            state = .failed
+            return
+        }
+        for attempt in 1 ... Self.maxRestartAttempts {
+            state = .restarting(attempt: attempt)
+            let delay = Self.backoffDelay(forAttempt: attempt)
+            try? await clock.sleep(seconds: delay)
+            do {
+                try await handle.startStream()
+                state = .running
+                return
+            } catch {
+                continue
+            }
+        }
+        state = .failed
+    }
+
+    /// Trigger a restart externally. Public so the coordinator's
+    /// `onStopError` closure can hop into the actor and kick off the
+    /// schedule without leaking the underlying state machine.
+    public func triggerRestart() async {
+        await runRestartSchedule()
+    }
 }
