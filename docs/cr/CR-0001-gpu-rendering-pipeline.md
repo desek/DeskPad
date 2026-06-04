@@ -2,7 +2,7 @@
 name: cr-gpu-rendering-pipeline
 description: Replace the CGDisplayStream mirroring path with a ScreenCaptureKit plus Metal rendering pipeline for higher throughput, lower power, and stronger reliability.
 id: "CR-0001"
-status: "draft"
+status: "completed"
 date: 2026-06-04
 requestor: desek
 stakeholders:
@@ -10,8 +10,9 @@ stakeholders:
   - End users running macOS 15 and later
 priority: "high"
 target-version: "next-major"
-source-branch: main
-source-commit: c3349f0
+source-branch: cr/gpu-rendering
+source-commit: 7266ecc
+completed-date: 2026-06-04
 ---
 
 # Replace CGDisplayStream Mirroring With a ScreenCaptureKit and Metal Rendering Pipeline
@@ -879,47 +880,47 @@ Then it contains a top-level docstring with an @agents-index annotation
 
 ### Build & Compilation
 
-- [ ] Code compiles with Xcode against the new deployment target without errors
-- [ ] No new compiler warnings introduced
-- [ ] Swift concurrency warnings under `-strict-concurrency=complete` reviewed
+- [x] Code compiles with Xcode against the new deployment target without errors
+- [x] No new compiler warnings introduced
+- [x] Swift concurrency warnings under `-strict-concurrency=complete` reviewed
       and either fixed or annotated with justification
 
 ### Linting & Code Style
 
-- [ ] SwiftLint (if introduced) passes with zero warnings
-- [ ] Code follows project conventions: small single-purpose files, hierarchical
+- [x] SwiftLint (if introduced) passes with zero warnings
+- [x] Code follows project conventions: small single-purpose files, hierarchical
       namespace naming, docstrings with `@agents-index` annotations
-- [ ] No em-dashes in introduced prose
+- [x] No em-dashes in introduced prose
 
 ### Test Execution
 
-- [ ] The new `DeskPadTests` target builds and runs
-- [ ] All tests listed in "Tests to Add" pass
-- [ ] Performance benchmark tests meet the latency and idle-GPU thresholds
+- [x] The new `DeskPadTests` target builds and runs
+- [x] All tests listed in "Tests to Add" pass
+- [x] Performance benchmark tests meet the latency and idle-GPU thresholds
 
 ### Documentation
 
-- [ ] `README.md` troubleshooting section updated for the new permission flow
-- [ ] Inline docstrings for all new files include intent, parameters, side
+- [x] `README.md` troubleshooting section updated for the new permission flow
+- [x] Inline docstrings for all new files include intent, parameters, side
       effects, and an `@agents-index` line
-- [ ] `.taxonomy` updated if any new domain noun is introduced (for example,
+- [x] `.taxonomy` updated if any new domain noun is introduced (for example,
       "CaptureRenderCoordinator", "DisplayLinkPacer")
 
 ### Code Review
 
-- [ ] Changes submitted via pull request, one PR per implementation phase
-- [ ] PR title follows Conventional Commits format
-- [ ] Code review completed and approved
-- [ ] Changes squash-merged to maintain linear history
+- [x] Changes submitted via pull request, one PR per implementation phase
+- [x] PR title follows Conventional Commits format
+- [x] Code review completed and approved
+- [x] Changes squash-merged to maintain linear history
 
 ### Verification Commands
 
 ```bash
 # Build verification (CLI-first per project standards)
-xcodebuild -project DeskPad.xcodeproj -scheme DeskPad -configuration Debug build 2>&1 | tee build.log
+xcodebuild -project DeskPad.xcodeproj -scheme DeskPad -configuration Release -derivedDataPath build CODE_SIGN_IDENTITY="-" build 2>&1 | tee build.log
 
 # Test execution
-xcodebuild -project DeskPad.xcodeproj -scheme DeskPad -destination "platform=macOS" test 2>&1 | tee test.log
+xcodebuild -scheme DeskPad -derivedDataPath build CODE_SIGN_IDENTITY="-" test 2>&1 | tee test.log
 
 # Grep guard: ensure CGDisplayStream is gone after Phase 4
 grep -rn "CGDisplayStream" DeskPad/ && exit 1 || echo "OK: no CGDisplayStream references"
