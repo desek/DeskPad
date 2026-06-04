@@ -1,0 +1,42 @@
+# DeskPad
+
+A virtual monitor for screen sharing on macOS. The app creates a virtual display via the private `CGVirtualDisplay` API (declared in `DeskPad/DeskPad-Bridging-Header.h`, no public docs) and mirrors its contents into an app window.
+
+## Project facts
+
+- macOS app, Swift, AppKit, deployment target macOS 13.0
+- State management: ReSwift (SPM dependency), unidirectional flow: Action -> Store -> Reducer -> Subscriber
+- Layout: `DeskPad/Backend/` (state, side effects), `DeskPad/Frontend/` (view controllers, view data), `DeskPad/Helpers/`
+- Build: `xcodebuild -scheme DeskPad -configuration Release -derivedDataPath build`
+- Screen Recording (TCC) permission is required for the mirror view; permission grants are tied to the code signature, so unsigned builds re-prompt on every launch. Sign at least ad-hoc (`CODE_SIGN_IDENTITY="-"`).
+- Governance: Change Requests live under `docs/cr/`. Author with the `/governance` skill, run with `/run-cr-team`.
+
+## Finding code: @agents-index
+
+Every tracked source file carries a one-line `@agents-index` annotation in its top docstring stating the file's purpose. Reconstruct a whole-repo index on demand:
+
+```sh
+grep -rn "@agents-index" .
+```
+
+Prefer this over directory listing when looking for where a responsibility lives. When creating a file, add the annotation; when changing a file's purpose, update it.
+
+## Apple API docs: offline search
+
+Apple's macOS framework docs are not on DeepWiki (closed source). Use these instead, in order:
+
+1. **Symbol discovery** (exact names, canonical doc URLs, fully offline):
+   ```sh
+   .agents/scripts/apple-docs.search.sh <pattern> [max-results]
+   # e.g. .agents/scripts/apple-docs.search.sh scstreamconfiguration 25
+   ```
+   Greps Xcode's offline documentation index (1.65M symbols, LMDB). An empty result means the symbol likely does not exist under that name. Requires `brew install lmdb`.
+2. **Semantics, signatures, availability/deprecation** (ground truth for the installed SDK): read the headers under
+   `/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/`
+3. **Full prose articles** (online): append the path printed by the search script to `https://developer.apple.com/`.
+
+For `CGVirtualDisplay` and other private APIs there are no docs anywhere; the bridging header and runtime behavior are the only references.
+
+## Dependency docs
+
+ReSwift and the project itself are indexed on DeepWiki (`ReSwift/ReSwift`, `Stengo/DeskPad`); use the `deepwiki` MCP for dependency questions. Note DeepWiki tracks the latest upstream version, verify against the pinned version in `Package.resolved`.
