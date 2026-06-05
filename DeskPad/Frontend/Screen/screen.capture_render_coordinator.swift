@@ -34,6 +34,12 @@ public final class CaptureRenderCoordinator {
     private var blitPipeline: BlitPipeline?
     private let deviceLossRecovery: DeviceLossRecovery
     private let presenter: FramePresenter
+    /// CR-0002 Phase 1: the coordinator now reaches the presentation
+    /// stage through a `PresentationBackend` existential rather than
+    /// the concrete Metal ensemble. The only possible concrete type in
+    /// Phase 1 is `MetalBackend`; Phase 2 adds the AVSBDL backend and
+    /// Phase 3 lets the user switch between them at runtime.
+    public private(set) var currentBackend: any PresentationBackend
     private var permissionWatcher: PermissionWatcher?
     private var liveHandle: LiveStreamHandle?
     private var currentMode: CaptureMode = .lowLatency(panelMaxRefreshHz: 60)
@@ -74,6 +80,9 @@ public final class CaptureRenderCoordinator {
             onCommandBufferError: { _ in }
         )
         pacer = DisplayLinkPacer(present: { _ in })
+        currentBackend = MetalBackend(
+            hostView: hostView, presenter: presenter, streamOutput: streamOutput
+        )
         // All stored properties are now initialised; install the
         // closures that capture `self`.
         let presenterRef = presenter
@@ -194,13 +203,17 @@ public final class CaptureRenderCoordinator {
         guard oldState != state else { return }
         if state == .running {
             if presentStallWatchdog == nil {
-                let presenterRef = presenter
                 let outputRef = streamOutput
                 presentStallWatchdog = PresentStallWatchdog(
                     sampleProvider: { [weak self] in
-                        PresentStallSample(
+                        // CR-0002 FR-18: read `presentedFrameCount`
+                        // through the active backend so the watchdog
+                        // continues to sample a meaningful value
+                        // after a live backend switch.
+                        let presented = self?.currentBackend.presentedFrameCount ?? 0
+                        return PresentStallSample(
                             ingested: outputRef.ingestedFrameCount,
-                            presented: presenterRef.presentedFrameCount,
+                            presented: presented,
                             state: self?.state ?? .idle
                         )
                     }

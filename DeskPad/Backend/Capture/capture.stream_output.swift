@@ -19,13 +19,33 @@ import QuartzCore
 import ScreenCaptureKit
 
 /// Most-recent surface plus its ingest timestamp, used by the renderer
-/// to compute capture-to-present latency (FR-15 / AC-13).
-public struct CapturedSurface: Sendable {
+/// to compute capture-to-present latency (FR-15 / AC-13). CR-0002
+/// Phase 1 widens this value to also carry the source `CMSampleBuffer`
+/// so the `PresentationBackend.enqueue(_:)` hand-off introduced by
+/// CR-0002 FR-2 can be a `CMSampleBuffer` instead of a raw `IOSurface`.
+/// The buffer is optional because the test-only `publishForTest`
+/// entry points start from a bare `CVPixelBuffer` / `IOSurface` and
+/// have no `CMSampleBuffer` to publish; the production
+/// `SCStreamOutput` callback always populates it.
+public struct CapturedSurface: @unchecked Sendable {
     public let surface: IOSurface
     /// `CACurrentMediaTime()` recorded the moment the SCK delivery
     /// callback ran. Subtracting from the present time gives the
     /// end-to-end capture-to-present latency.
     public let ingestHostTime: CFTimeInterval
+    /// Source `CMSampleBuffer` retained alongside the unwrapped
+    /// `IOSurface`. CR-0002 Phase 1 carries this so the
+    /// `PresentationBackend.enqueue(_:)` interface can be a
+    /// `CMSampleBuffer` per CR-0002 FR-2 without a second extraction
+    /// hop. `nil` only on the test-only `publishForTest` paths that
+    /// start from a bare `CVPixelBuffer` or `IOSurface`.
+    public let sampleBuffer: CMSampleBuffer?
+
+    public init(surface: IOSurface, ingestHostTime: CFTimeInterval, sampleBuffer: CMSampleBuffer? = nil) {
+        self.surface = surface
+        self.ingestHostTime = ingestHostTime
+        self.sampleBuffer = sampleBuffer
+    }
 }
 
 /// Stream output that captures the most recent `IOSurface` delivered by an
@@ -154,15 +174,22 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         guard let surfaceRef = CVPixelBufferGetIOSurface(pixelBuffer) else { return }
         let surface = surfaceRef.takeUnretainedValue()
-        publish(surface: surface)
+        publish(surface: surface, sampleBuffer: sampleBuffer)
     }
 
-    private func publish(surface: IOSurface) {
+    private func publish(surface: IOSurface, sampleBuffer: CMSampleBuffer? = nil) {
         ingestedCounterLock.withLock { $0 += 1 }
         let now = CACurrentMediaTime()
+        // `OSAllocatedUnfairLock.withLock`'s closure is `@Sendable`, but
+        // `CMSampleBuffer` is not `Sendable` in the Swift 6 strict-
+        // concurrency model. The buffer is owned by this synchronous
+        // call (the SCK delivery callback retains it for the duration
+        // of `ingest`), so it is safe to carry across the lock; the
+        // `@unchecked Sendable` `Captured` wrapper documents that.
+        let captured = CapturedSurface(surface: surface, ingestHostTime: now, sampleBuffer: sampleBuffer)
         let isFirst = lock.withLock { state in
             let wasEmpty = state == nil
-            state = CapturedSurface(surface: surface, ingestHostTime: now)
+            state = captured
             return wasEmpty
         }
         // One-shot arrival marker: proves capture-side frame flow in the

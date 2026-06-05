@@ -76,6 +76,11 @@
 		7D00000000000000000E0005 /* selftest.readback.sampling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0107 /* selftest.readback.sampling.swift */; };
 		7D00000000000000000E0012 /* selftest.presentation_backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0108 /* selftest.presentation_backend.swift */; };
 		7D00000000000000000E0013 /* subscriber_view_controller_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0109 /* subscriber_view_controller_tests.swift */; };
+		7E00000000000000000F0001 /* render.presentation_backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0101 /* render.presentation_backend.swift */; };
+		7E00000000000000000F0002 /* render.presentation_backend_diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0102 /* render.presentation_backend_diagnostics.swift */; };
+		7E00000000000000000F0003 /* render.metal_backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0103 /* render.metal_backend.swift */; };
+		7E00000000000000000F0010 /* presentation_backend_protocol_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0110 /* presentation_backend_protocol_tests.swift */; };
+		7E00000000000000000F0011 /* metal_backend_adapter_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0111 /* metal_backend_adapter_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -152,6 +157,11 @@
 		7D00000000000000000E0107 /* selftest.readback.sampling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest.readback.sampling.swift; sourceTree = "<group>"; };
 		7D00000000000000000E0108 /* selftest.presentation_backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest.presentation_backend.swift; sourceTree = "<group>"; };
 		7D00000000000000000E0109 /* subscriber_view_controller_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = subscriber_view_controller_tests.swift; sourceTree = "<group>"; };
+		7E00000000000000000F0101 /* render.presentation_backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.presentation_backend.swift; sourceTree = "<group>"; };
+		7E00000000000000000F0102 /* render.presentation_backend_diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.presentation_backend_diagnostics.swift; sourceTree = "<group>"; };
+		7E00000000000000000F0103 /* render.metal_backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.metal_backend.swift; sourceTree = "<group>"; };
+		7E00000000000000000F0110 /* presentation_backend_protocol_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = presentation_backend_protocol_tests.swift; sourceTree = "<group>"; };
+		7E00000000000000000F0111 /* metal_backend_adapter_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = metal_backend_adapter_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -274,6 +284,9 @@
 				7A00000000000000000D0005 /* render.device_loss_recovery.swift */,
 				7A00000000000000000F0004 /* render.frame_presenter.swift */,
 				7C00000000000000000D0101 /* render.present_stall_watchdog.swift */,
+				7E00000000000000000F0101 /* render.presentation_backend.swift */,
+				7E00000000000000000F0102 /* render.presentation_backend_diagnostics.swift */,
+				7E00000000000000000F0103 /* render.metal_backend.swift */,
 			);
 			path = Render;
 			sourceTree = "<group>";
@@ -289,6 +302,8 @@
 				7B00000000000000000C0203 /* blit_pipeline_tests.swift */,
 				7B00000000000000000C0207 /* iosurface_texture_cache_eviction_tests.swift */,
 				7C00000000000000000D0102 /* present_stall_watchdog_tests.swift */,
+				7E00000000000000000F0110 /* presentation_backend_protocol_tests.swift */,
+				7E00000000000000000F0111 /* metal_backend_adapter_tests.swift */,
 			);
 			path = Render;
 			sourceTree = "<group>";
@@ -602,6 +617,9 @@
 				7D00000000000000000E0004 /* selftest.loopback_pattern.swift in Sources */,
 				7D00000000000000000E0005 /* selftest.readback.sampling.swift in Sources */,
 				7D00000000000000000E0012 /* selftest.presentation_backend.swift in Sources */,
+				7E00000000000000000F0001 /* render.presentation_backend.swift in Sources */,
+				7E00000000000000000F0002 /* render.presentation_backend_diagnostics.swift in Sources */,
+				7E00000000000000000F0003 /* render.metal_backend.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -639,6 +657,8 @@
 				7D00000000000000000E0010 /* readback_tests.swift in Sources */,
 				7D00000000000000000E0011 /* loopback_pattern_tests.swift in Sources */,
 				7D00000000000000000E0013 /* subscriber_view_controller_tests.swift in Sources */,
+				7E00000000000000000F0010 /* presentation_backend_protocol_tests.swift in Sources */,
+				7E00000000000000000F0011 /* metal_backend_adapter_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
