@@ -57,6 +57,9 @@ public final class DisplayLinkPacer: NSObject {
 
     private let log = Logger(category: "render")
     private var metalDisplayLink: CAMetalDisplayLink?
+    /// Layer the current link was built for; identity-compared in
+    /// `attach(toMetalLayer:)` to make repeat attachment a no-op.
+    private weak var attachedLayer: CAMetalLayer?
     private var present: Present
     private var dirty: Bool = false
 
@@ -89,11 +92,23 @@ public final class DisplayLinkPacer: NSObject {
     /// `CAMetalDisplayLink` per FR-17 / AC-16 and adding it to the main
     /// run loop. The pacer becomes the link's delegate.
     public func attach(toMetalLayer layer: CAMetalLayer) {
+        // Idempotent: re-attaching to the same layer must be a no-op.
+        // Invalidating and recreating the link mid-flight orphans any
+        // drawable the old link already vended; presenting an orphaned
+        // drawable raises NSException in CAMetalDrawable
+        // presentWithOptions: (observed as a launch crash when the
+        // coordinator re-attached on stream start after the view
+        // controller's initial attach).
+        if metalDisplayLink != nil, attachedLayer === layer {
+            log.info("DisplayLinkPacer attach skipped; already attached to this CAMetalLayer")
+            return
+        }
         detach()
         let link = CAMetalDisplayLink(metalLayer: layer)
         link.delegate = self
         link.add(to: .main, forMode: .common)
         metalDisplayLink = link
+        attachedLayer = layer
         log.info("DisplayLinkPacer attached to CAMetalLayer")
     }
 
@@ -101,6 +116,7 @@ public final class DisplayLinkPacer: NSObject {
     public func detach() {
         metalDisplayLink?.invalidate()
         metalDisplayLink = nil
+        attachedLayer = nil
     }
 
     /// Test-only entry point: drive the same code path as a real
