@@ -121,3 +121,43 @@ Total tests executed: 25 (all pass). Test rows specified in the CR: 16. Test row
 ## Gaps
 
 None remaining. The runtime smoke check (launch the built app and observe "DeskPad Display" in `system_profiler SPDisplaysDataType`, plus capture-to-present latency lines in `~/Library/Logs/DeskPad/deskpad.log`) requires the user to grant Screen Recording permission interactively and is therefore out of scope for the automated sandbox; the integration paths it would exercise are all covered by the unit-shaped tests above (filter resolution, configuration, stream construction, output extraction, pacer ticking with target timestamps, latency budget, adaptive mode switching, restart wiring).
+
+## Runtime Verification Addendum (2026-06-05, live system)
+
+The interactive runtime check that was out of scope for the automated
+sandbox (see Gaps above) was performed manually on the target machine
+(MacBookPro18,2, M1 Pro, macOS 26.5.1) with Screen Recording granted
+and the app installed at `/Applications/DeskPad.app`.
+
+### Defects found and fixed during runtime verification
+
+Two defects escaped unit-shaped tests because they only manifest with a
+real `CAMetalDisplayLink` (tests drive the pacer's synthetic `tick()`):
+
+| Checkpoint | Defect | Fix |
+|---|---|---|
+| `6a4eea3` | `FramePresenter` called `layer.nextDrawable()` while a `CAMetalDisplayLink` was attached to the layer; the link owns drawable vending, so `nextDrawable()` starved and every present silently bailed (all-white window) | `PacerTick` now carries the link-vended `update.drawable`; presenter prefers it |
+| `e0f7cf3` | Pacer attached twice (view controller setup, then coordinator on stream start); the second attach invalidated the first link | `attach(toMetalLayer:)` is idempotent for the same layer |
+| `5806880` | `cb.present(drawable, atTime:)` on a link-vended drawable raises `NSException` in `CAMetalDrawable presentWithOptions:` (SIGABRT on the Metal completion queue); the link manages the drawable's presentation schedule | Plain `cb.present(drawable)`; vsync alignment comes from the link cadence, `targetPresentationTimestamp` retained for latency diagnostics |
+
+### Measured runtime evidence
+
+Source: structured log at the sandbox container path
+`~/Library/Containers/com.stengo.DeskPad/Data/Library/Logs/DeskPad/deskpad.log`,
+`ps` sampling, and `sudo powermetrics` (whole-package).
+
+| Metric | Measured | Verdict |
+|---|---|---|
+| Capture-to-present latency (3360x2100) | 4 to 13 ms, median ~7 ms over 4,400+ frames | AC-13 (one-frame budget) confirmed live |
+| CPU, desktop idle | 7 to 10 percent of one core | |
+| CPU, cursor-sweep load | 8 to 11 percent | |
+| Package GPU power while mirroring | 342 to 446 mW | "idle GPU approaching zero" estimate holds |
+| Package CPU power | ~1.1 W (whole system) | |
+| Memory | 118 MB | |
+| Frame pacing | dirty-gated: ~25-35 fps with desktop activity, ~2.5 fps static | AC-16 pacing confirmed live |
+| Adaptive mode | lowLatency -> powerSaving transition observed in log with EMA value | AC-15 confirmed live |
+| First-frame markers | `first frame ingested (3360x2100)` present | capture-side flow provable from log |
+| Stability | 4,400+ frames presented, zero stream errors after fixes | |
+
+ACs 13, 15, and 16, previously validated by synthetic benchmarks only,
+now have live-system confirmation.
