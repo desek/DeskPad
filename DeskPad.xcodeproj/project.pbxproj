@@ -67,6 +67,10 @@
 		7B00000000000000000C030A /* app_delegate_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C020A /* app_delegate_tests.swift */; };
 		7C00000000000000000D0001 /* render.present_stall_watchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C00000000000000000D0101 /* render.present_stall_watchdog.swift */; };
 		7C00000000000000000D0002 /* present_stall_watchdog_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C00000000000000000D0102 /* present_stall_watchdog_tests.swift */; };
+		7D00000000000000000E0001 /* selftest.launch_dispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0101 /* selftest.launch_dispatch.swift */; };
+		7D00000000000000000E0002 /* selftest.readback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0102 /* selftest.readback.swift */; };
+		7D00000000000000000E0003 /* selftest.verdict_writer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0103 /* selftest.verdict_writer.swift */; };
+		7D00000000000000000E0010 /* readback_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0104 /* readback_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -134,6 +138,10 @@
 		7B00000000000000000C020A /* app_delegate_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = app_delegate_tests.swift; sourceTree = "<group>"; };
 		7C00000000000000000D0101 /* render.present_stall_watchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.present_stall_watchdog.swift; sourceTree = "<group>"; };
 		7C00000000000000000D0102 /* present_stall_watchdog_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = present_stall_watchdog_tests.swift; sourceTree = "<group>"; };
+		7D00000000000000000E0101 /* selftest.launch_dispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest.launch_dispatch.swift; sourceTree = "<group>"; };
+		7D00000000000000000E0102 /* selftest.readback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest.readback.swift; sourceTree = "<group>"; };
+		7D00000000000000000E0103 /* selftest.verdict_writer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest.verdict_writer.swift; sourceTree = "<group>"; };
+		7D00000000000000000E0104 /* readback_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = readback_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -220,8 +228,27 @@
 				7A00000000000000000E0002 /* screen.capture_render_coordinator.swift */,
 				7A00000000000000000F0001 /* screen.permission_probe.swift */,
 				7A00000000000000000F0002 /* screen.permission_watcher.swift */,
+				7D00000000000000000E0201 /* SelfTest */,
 			);
 			path = Screen;
+			sourceTree = "<group>";
+		};
+		7D00000000000000000E0201 /* SelfTest */ = {
+			isa = PBXGroup;
+			children = (
+				7D00000000000000000E0101 /* selftest.launch_dispatch.swift */,
+				7D00000000000000000E0102 /* selftest.readback.swift */,
+				7D00000000000000000E0103 /* selftest.verdict_writer.swift */,
+			);
+			path = SelfTest;
+			sourceTree = "<group>";
+		};
+		7D00000000000000000E0202 /* SelfTest */ = {
+			isa = PBXGroup;
+			children = (
+				7D00000000000000000E0104 /* readback_tests.swift */,
+			);
+			path = SelfTest;
 			sourceTree = "<group>";
 		};
 		7A00000000000000000D0009 /* Render */ = {
@@ -317,6 +344,7 @@
 				7B00000000000000000C0210 /* Frontend */,
 				7A00000000000000000E0005 /* Integration */,
 				7A00000000000000000F000C /* Performance */,
+				7D00000000000000000E0202 /* SelfTest */,
 			);
 			path = DeskPadTests;
 			sourceTree = "<group>";
@@ -553,6 +581,9 @@
 				7A00000000000000000F0012 /* capture.live_stream_handle.swift in Sources */,
 				7A00000000000000000F0013 /* render.frame_presenter.swift in Sources */,
 				7C00000000000000000D0001 /* render.present_stall_watchdog.swift in Sources */,
+				7D00000000000000000E0001 /* selftest.launch_dispatch.swift in Sources */,
+				7D00000000000000000E0002 /* selftest.readback.swift in Sources */,
+				7D00000000000000000E0003 /* selftest.verdict_writer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -587,6 +618,7 @@
 				7B00000000000000000C0309 /* stream_output_ingest_counter_tests.swift in Sources */,
 				7B00000000000000000C030A /* app_delegate_tests.swift in Sources */,
 				7C00000000000000000D0002 /* present_stall_watchdog_tests.swift in Sources */,
+				7D00000000000000000E0010 /* readback_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
