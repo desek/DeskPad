@@ -37,8 +37,15 @@ public final class CaptureRenderCoordinator {
     private var permissionWatcher: PermissionWatcher?
     private var liveHandle: LiveStreamHandle?
     private var currentMode: CaptureMode = .lowLatency(panelMaxRefreshHz: 60)
+    /// CR-0003 Phase 2: Layer 1 watchdog. Lazily constructed and only
+    /// running while `state == .running`; see FR-6 for the emission
+    /// contract and `setState(_:)` for the lifecycle wiring.
+    private var presentStallWatchdog: PresentStallWatchdog?
 
-    public private(set) var state: CaptureRenderCoordinatorState = .idle
+    public private(set) var state: CaptureRenderCoordinatorState = .idle {
+        didSet { didSetState(from: oldValue) }
+    }
+
     private var lastResolution: CGSize = .zero
     private var lastScaleFactor: CGFloat = 1
     private var displayID: CGDirectDisplayID?
@@ -175,6 +182,39 @@ public final class CaptureRenderCoordinator {
             }
         }
         return currentMode
+    }
+
+    /// CR-0003 Phase 2 lifecycle wiring: start the Layer 1 watchdog on
+    /// the first transition into `.running`; stop it whenever the
+    /// coordinator leaves `.running` for `.idle`, `.permissionRequired`,
+    /// or `.failed`. Driven from the `state` property's `didSet` so
+    /// every state transition (including the test-only seam
+    /// `_setStateForTest`) is covered without duplicating call sites.
+    private func didSetState(from oldState: CaptureRenderCoordinatorState) {
+        guard oldState != state else { return }
+        if state == .running {
+            if presentStallWatchdog == nil {
+                let presenterRef = presenter
+                let outputRef = streamOutput
+                presentStallWatchdog = PresentStallWatchdog(
+                    sampleProvider: { [weak self] in
+                        PresentStallSample(
+                            ingested: outputRef.ingestedFrameCount,
+                            presented: presenterRef.presentedFrameCount,
+                            state: self?.state ?? .idle
+                        )
+                    }
+                )
+            }
+            presentStallWatchdog?.start()
+            return
+        }
+        switch state {
+        case .idle, .permissionRequired, .failed:
+            presentStallWatchdog?.stop()
+        case .restarting, .running:
+            break
+        }
     }
 
     private func startPermissionWatcher() {

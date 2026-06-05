@@ -65,6 +65,8 @@
 		7B00000000000000000C0308 /* logger_method_coverage_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0208 /* logger_method_coverage_tests.swift */; };
 		7B00000000000000000C0309 /* stream_output_ingest_counter_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0209 /* stream_output_ingest_counter_tests.swift */; };
 		7B00000000000000000C030A /* app_delegate_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C020A /* app_delegate_tests.swift */; };
+		7C00000000000000000D0001 /* render.present_stall_watchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C00000000000000000D0101 /* render.present_stall_watchdog.swift */; };
+		7C00000000000000000D0002 /* present_stall_watchdog_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C00000000000000000D0102 /* present_stall_watchdog_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -130,6 +132,8 @@
 		7B00000000000000000C0208 /* logger_method_coverage_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = logger_method_coverage_tests.swift; sourceTree = "<group>"; };
 		7B00000000000000000C0209 /* stream_output_ingest_counter_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = stream_output_ingest_counter_tests.swift; sourceTree = "<group>"; };
 		7B00000000000000000C020A /* app_delegate_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = app_delegate_tests.swift; sourceTree = "<group>"; };
+		7C00000000000000000D0101 /* render.present_stall_watchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.present_stall_watchdog.swift; sourceTree = "<group>"; };
+		7C00000000000000000D0102 /* present_stall_watchdog_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = present_stall_watchdog_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -228,6 +232,7 @@
 				7A00000000000000000D0004 /* render.display_link_pacer.swift */,
 				7A00000000000000000D0005 /* render.device_loss_recovery.swift */,
 				7A00000000000000000F0004 /* render.frame_presenter.swift */,
+				7C00000000000000000D0101 /* render.present_stall_watchdog.swift */,
 			);
 			path = Render;
 			sourceTree = "<group>";
@@ -242,6 +247,7 @@
 				7B00000000000000000C0202 /* frame_presenter_tests.swift */,
 				7B00000000000000000C0203 /* blit_pipeline_tests.swift */,
 				7B00000000000000000C0207 /* iosurface_texture_cache_eviction_tests.swift */,
+				7C00000000000000000D0102 /* present_stall_watchdog_tests.swift */,
 			);
 			path = Render;
 			sourceTree = "<group>";
@@ -546,6 +552,7 @@
 				7A00000000000000000F0011 /* screen.permission_watcher.swift in Sources */,
 				7A00000000000000000F0012 /* capture.live_stream_handle.swift in Sources */,
 				7A00000000000000000F0013 /* render.frame_presenter.swift in Sources */,
+				7C00000000000000000D0001 /* render.present_stall_watchdog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -579,6 +586,7 @@
 				7B00000000000000000C0308 /* logger_method_coverage_tests.swift in Sources */,
 				7B00000000000000000C0309 /* stream_output_ingest_counter_tests.swift in Sources */,
 				7B00000000000000000C030A /* app_delegate_tests.swift in Sources */,
+				7C00000000000000000D0002 /* present_stall_watchdog_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
