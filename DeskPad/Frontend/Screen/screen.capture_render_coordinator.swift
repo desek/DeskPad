@@ -47,6 +47,16 @@ public final class CaptureRenderCoordinator {
     /// running while `state == .running`; see FR-6 for the emission
     /// contract and `setState(_:)` for the lifecycle wiring.
     private var presentStallWatchdog: PresentStallWatchdog?
+    /// CR-0002 Phase 3: throttle the no-op log line emitted when an
+    /// adaptive `.lowLatency` request lands on a backend whose
+    /// `diagnostics.latencyModeApplicable` is `false` (FR-14). Reset
+    /// whenever the active backend changes so the next burst is
+    /// announced once.
+    private var lastLatencyNoOpLogged: PresentationBackendIdentifier?
+    /// CR-0002 Phase 3: notification observer token for the menu
+    /// switch event. Removed in `deinit` (test-only path) and via
+    /// `tearDownBackendSwitchObserver` when needed.
+    private var backendSwitchObserver: NSObjectProtocol?
 
     public private(set) var state: CaptureRenderCoordinatorState = .idle {
         didSet { didSetState(from: oldValue) }
@@ -98,7 +108,27 @@ public final class CaptureRenderCoordinator {
             forName: NSApplication.didChangeScreenParametersNotification,
             object: NSApplication.shared, queue: .main
         ) { [weak self] _ in Task { @MainActor in self?.evaluatePermission() } }
+        // CR-0002 Phase 3 (FR-5, FR-6, AC-7): observe the menu-driven
+        // (or test-driven) backend switch notification and perform the
+        // live swap on the main actor. The `SCStream` is not stopped;
+        // only the backend is torn down and replaced.
+        backendSwitchObserver = NotificationCenter.default.addObserver(
+            forName: .deskPadPresentationBackendSwitch,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            let raw = (note.userInfo?[PresentationBackendSwitchUserInfoKey.backend] as? String) ?? ""
+            let trigger = (note.userInfo?[PresentationBackendSwitchUserInfoKey.trigger] as? String) ?? "unknown"
+            guard let identifier = PresentationBackendIdentifier(rawValue: raw) else { return }
+            Task { @MainActor in self?.switchBackend(to: identifier, trigger: trigger) }
+        }
     }
+
+    // Observer removal is intentionally not in `deinit`: the coordinator
+    // is a `@MainActor` final class and Swift 6 forbids touching
+    // actor-isolated stored properties from a nonisolated deinit. The
+    // observer closure captures `[weak self]`, so a deallocated
+    // coordinator no-ops; the `NotificationCenter` block is reaped when
+    // the process exits.
 
     public func bindDisplay(_ displayID: CGDirectDisplayID) {
         self.displayID = displayID
@@ -177,6 +207,15 @@ public final class CaptureRenderCoordinator {
 
     /// FR-18 adaptive-mode evaluation. Public so the integration test
     /// can drive it deterministically by seeding the output's EMA.
+    ///
+    /// CR-0002 Phase 3 (FR-14, AC-14): when the desired mode is
+    /// `.lowLatency` but the active backend reports
+    /// `diagnostics.latencyModeApplicable == false`, the
+    /// presentation-side effects no-op; the capture-side
+    /// `liveHandle.updateMode(_:)` MAY still apply because mode
+    /// transitions affect what the capture subsystem produces. The
+    /// no-op is logged at most once per backend until the active
+    /// backend changes.
     @discardableResult
     public func evaluateAdaptiveMode(switchThresholdSeconds: Double = 1.0 / 45.0) -> CaptureMode {
         let ema = streamOutput.arrivalMetrics.intervalEMA
@@ -184,13 +223,76 @@ public final class CaptureRenderCoordinator {
         let desired: CaptureMode = ema > switchThresholdSeconds
             ? .powerSaving : .lowLatency(panelMaxRefreshHz: panelMax)
         if desired != currentMode {
-            log.notice("adaptive mode transition: \(String(describing: currentMode)) -> \(String(describing: desired)) ema=\(ema)")
+            let backendId = currentBackend.diagnostics.identifier
+            let latencyApplicable = currentBackend.diagnostics.latencyModeApplicable
+            log.notice("adaptive mode transition: \(String(describing: currentMode)) -> \(String(describing: desired)) ema=\(ema) backend=\(backendId)")
             currentMode = desired
+            if case .lowLatency = desired, !latencyApplicable {
+                let parsedId = PresentationBackendIdentifier(rawValue: backendId)
+                if lastLatencyNoOpLogged != parsedId {
+                    log.notice("adaptive lowLatency request: presentation-side no-op (backend=\(backendId) latencyModeApplicable=false)")
+                    lastLatencyNoOpLogged = parsedId
+                }
+                if let liveHandle {
+                    Task { @MainActor in try? await liveHandle.updateMode(desired) }
+                }
+                return currentMode
+            }
             if let liveHandle {
                 Task { @MainActor in try? await liveHandle.updateMode(desired) }
             }
         }
         return currentMode
+    }
+
+    /// CR-0002 Phase 3 (FR-6, AC-7): live backend switch. Tears down
+    /// the current backend, removes its `hostView` from the window's
+    /// content view, instantiates the new backend, installs the new
+    /// `hostView`, calls `configure(displaySize:scaleFactor:)`, and
+    /// logs the elapsed time. The `SCStream` is not stopped; capture
+    /// continues uninterrupted. Re-entrant calls into the active
+    /// backend are a no-op (idempotent).
+    public func switchBackend(to identifier: PresentationBackendIdentifier, trigger: String) {
+        let oldIdentifier = currentBackend.diagnostics.identifier
+        guard oldIdentifier != identifier.rawValue else {
+            log.info("backend switch ignored: already on \(identifier.rawValue) (trigger=\(trigger))")
+            return
+        }
+        let start = Date()
+        let oldHostView = currentBackend.hostView
+        currentBackend.teardown()
+        let newBackend: any PresentationBackend
+        switch identifier {
+        case .metal:
+            newBackend = MetalBackend(
+                hostView: hostView, presenter: presenter, streamOutput: streamOutput
+            )
+        case .avsbdl:
+            newBackend = AVSBDLBackend()
+        }
+        // Swap the host view inside the parent (the window's content
+        // view, or whichever superview previously hosted the old
+        // backend's view).
+        if let parent = oldHostView.superview {
+            let frame = oldHostView.frame
+            let autoresizing = oldHostView.autoresizingMask
+            oldHostView.removeFromSuperview()
+            newBackend.hostView.frame = frame
+            newBackend.hostView.autoresizingMask = autoresizing
+            parent.addSubview(newBackend.hostView)
+        }
+        currentBackend = newBackend
+        lastLatencyNoOpLogged = nil
+        let resolution = lastResolution == .zero
+            ? CGSize(width: 1920, height: 1080) : lastResolution
+        let scale = lastScaleFactor == 0 ? 1 : lastScaleFactor
+        do {
+            try newBackend.configure(displaySize: resolution, scaleFactor: scale)
+        } catch {
+            log.error("backend configure failed: \(String(describing: error))")
+        }
+        let elapsedMs = Date().timeIntervalSince(start) * 1000.0
+        log.notice("backend switch: \(oldIdentifier) -> \(identifier.rawValue) trigger=\(trigger) elapsed_ms=\(elapsedMs)")
     }
 
     /// CR-0003 Phase 2 lifecycle wiring: start the Layer 1 watchdog on

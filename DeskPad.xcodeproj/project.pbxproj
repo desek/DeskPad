@@ -95,6 +95,17 @@
 		7E00000000000000000F0218 /* avsbdl_spy_renderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0318 /* avsbdl_spy_renderer.swift */; };
 		7E00000000000000000F0219 /* avsbdl_test_buffers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0319 /* avsbdl_test_buffers.swift */; };
 		7E00000000000000000F0220 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0320 /* AVFoundation.framework */; };
+		7F0000000000000000100001 /* configuration.presentation_backend_key.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100101 /* configuration.presentation_backend_key.swift */; };
+		7F0000000000000000100002 /* configuration.user_defaults.bootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100102 /* configuration.user_defaults.bootstrap.swift */; };
+		7F0000000000000000100003 /* menu.presentation_backend_submenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100103 /* menu.presentation_backend_submenu.swift */; };
+		7F0000000000000000100010 /* presentation_backend_default_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100110 /* presentation_backend_default_tests.swift */; };
+		7F0000000000000000100011 /* presentation_backend_launch_arg_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100111 /* presentation_backend_launch_arg_tests.swift */; };
+		7F0000000000000000100012 /* presentation_backend_invalid_value_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100112 /* presentation_backend_invalid_value_tests.swift */; };
+		7F0000000000000000100013 /* menu_presentation_backend_submenu_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100113 /* menu_presentation_backend_submenu_tests.swift */; };
+		7F0000000000000000100014 /* live_switch_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100114 /* live_switch_tests.swift */; };
+		7F0000000000000000100015 /* adaptive_mode_no_op_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100115 /* adaptive_mode_no_op_tests.swift */; };
+		7F0000000000000000100016 /* selftest_forces_metal_backend_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100116 /* selftest_forces_metal_backend_tests.swift */; };
+		7F0000000000000000100017 /* present_stall_watchdog_backend_agnostic_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100117 /* present_stall_watchdog_backend_agnostic_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -190,6 +201,17 @@
 		7E00000000000000000F0318 /* avsbdl_spy_renderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = avsbdl_spy_renderer.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0319 /* avsbdl_test_buffers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = avsbdl_test_buffers.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0320 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		7F0000000000000000100101 /* configuration.presentation_backend_key.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = configuration.presentation_backend_key.swift; sourceTree = "<group>"; };
+		7F0000000000000000100102 /* configuration.user_defaults.bootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = configuration.user_defaults.bootstrap.swift; sourceTree = "<group>"; };
+		7F0000000000000000100103 /* menu.presentation_backend_submenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = menu.presentation_backend_submenu.swift; sourceTree = "<group>"; };
+		7F0000000000000000100110 /* presentation_backend_default_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = presentation_backend_default_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100111 /* presentation_backend_launch_arg_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = presentation_backend_launch_arg_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100112 /* presentation_backend_invalid_value_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = presentation_backend_invalid_value_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100113 /* menu_presentation_backend_submenu_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = menu_presentation_backend_submenu_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100114 /* live_switch_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = live_switch_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100115 /* adaptive_mode_no_op_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = adaptive_mode_no_op_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100116 /* selftest_forces_metal_backend_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest_forces_metal_backend_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100117 /* present_stall_watchdog_backend_agnostic_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = present_stall_watchdog_backend_agnostic_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -222,8 +244,36 @@
 				6D41B09D2879FA87007CEB2F /* MouseLocation */,
 				7A00000000000000000C0008 /* Capture */,
 				7A00000000000000000D0009 /* Render */,
+				7F0000000000000000100200 /* Configuration */,
 			);
 			path = Backend;
+			sourceTree = "<group>";
+		};
+		7F0000000000000000100200 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				7F0000000000000000100101 /* configuration.presentation_backend_key.swift */,
+				7F0000000000000000100102 /* configuration.user_defaults.bootstrap.swift */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+		7F0000000000000000100201 /* Menu */ = {
+			isa = PBXGroup;
+			children = (
+				7F0000000000000000100103 /* menu.presentation_backend_submenu.swift */,
+			);
+			path = Menu;
+			sourceTree = "<group>";
+		};
+		7F0000000000000000100202 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				7F0000000000000000100110 /* presentation_backend_default_tests.swift */,
+				7F0000000000000000100111 /* presentation_backend_launch_arg_tests.swift */,
+				7F0000000000000000100112 /* presentation_backend_invalid_value_tests.swift */,
+			);
+			path = Configuration;
 			sourceTree = "<group>";
 		};
 		7A00000000000000000C0008 /* Capture */ = {
@@ -255,6 +305,7 @@
 			isa = PBXGroup;
 			children = (
 				6D41B0A22879FB88007CEB2F /* Screen */,
+				7F0000000000000000100201 /* Menu */,
 			);
 			path = Frontend;
 			sourceTree = "<group>";
@@ -301,6 +352,7 @@
 			children = (
 				7D00000000000000000E0104 /* readback_tests.swift */,
 				7D00000000000000000E0106 /* loopback_pattern_tests.swift */,
+				7F0000000000000000100116 /* selftest_forces_metal_backend_tests.swift */,
 			);
 			path = SelfTest;
 			sourceTree = "<group>";
@@ -415,6 +467,7 @@
 				7A00000000000000000E0005 /* Integration */,
 				7A00000000000000000F000C /* Performance */,
 				7D00000000000000000E0202 /* SelfTest */,
+				7F0000000000000000100202 /* Configuration */,
 			);
 			path = DeskPadTests;
 			sourceTree = "<group>";
@@ -426,6 +479,9 @@
 				7A00000000000000000E0004 /* permission_revocation_tests.swift */,
 				7A00000000000000000F0006 /* adaptive_mode_switch_tests.swift */,
 				7A00000000000000000F0007 /* mouse_location_behaviour_tests.swift */,
+				7F0000000000000000100114 /* live_switch_tests.swift */,
+				7F0000000000000000100115 /* adaptive_mode_no_op_tests.swift */,
+				7F0000000000000000100117 /* present_stall_watchdog_backend_agnostic_tests.swift */,
 			);
 			path = Integration;
 			sourceTree = "<group>";
@@ -447,6 +503,7 @@
 				7B00000000000000000C020A /* app_delegate_tests.swift */,
 				7D00000000000000000E0109 /* subscriber_view_controller_tests.swift */,
 				7E00000000000000000F0310 /* avsbdl_host_view_tests.swift */,
+				7F0000000000000000100113 /* menu_presentation_backend_submenu_tests.swift */,
 			);
 			path = Frontend;
 			sourceTree = "<group>";
@@ -665,6 +722,9 @@
 				7E00000000000000000F0201 /* render.avsbdl_host_view.swift in Sources */,
 				7E00000000000000000F0202 /* render.avsbdl_display_immediately_attachment.swift in Sources */,
 				7E00000000000000000F0203 /* render.avsbdl_backend.swift in Sources */,
+				7F0000000000000000100001 /* configuration.presentation_backend_key.swift in Sources */,
+				7F0000000000000000100002 /* configuration.user_defaults.bootstrap.swift in Sources */,
+				7F0000000000000000100003 /* menu.presentation_backend_submenu.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -714,6 +774,14 @@
 				7E00000000000000000F0217 /* avsbdl_backend_presented_count_tests.swift in Sources */,
 				7E00000000000000000F0218 /* avsbdl_spy_renderer.swift in Sources */,
 				7E00000000000000000F0219 /* avsbdl_test_buffers.swift in Sources */,
+				7F0000000000000000100010 /* presentation_backend_default_tests.swift in Sources */,
+				7F0000000000000000100011 /* presentation_backend_launch_arg_tests.swift in Sources */,
+				7F0000000000000000100012 /* presentation_backend_invalid_value_tests.swift in Sources */,
+				7F0000000000000000100013 /* menu_presentation_backend_submenu_tests.swift in Sources */,
+				7F0000000000000000100014 /* live_switch_tests.swift in Sources */,
+				7F0000000000000000100015 /* adaptive_mode_no_op_tests.swift in Sources */,
+				7F0000000000000000100016 /* selftest_forces_metal_backend_tests.swift in Sources */,
+				7F0000000000000000100017 /* present_stall_watchdog_backend_agnostic_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

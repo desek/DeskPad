@@ -7,8 +7,18 @@ enum AppDelegateAction: Action {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow!
+    /// CR-0002 Phase 3: held for the application's lifetime so menu
+    /// items retain their target (`PresentationBackendSubmenu`). Without
+    /// this strong reference the radio handlers would be deallocated as
+    /// soon as `applicationDidFinishLaunching` returned.
+    var presentationBackendSubmenu: PresentationBackendSubmenu?
 
     func applicationDidFinishLaunching(_: Notification) {
+        // CR-0002 Phase 3: register UserDefaults defaults before any
+        // view loads so the first read of DeskPad.presentationBackend
+        // returns "metal" rather than nil (FR-3, AC-3).
+        PresentationBackendDefaultsBootstrap.register()
+
         let viewController = ScreenViewController()
         window = NSWindow(contentViewController: viewController)
         window.delegate = viewController
@@ -33,7 +43,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         subMenu.addItem(quitMenuItem)
         mainMenuItem.submenu = subMenu
-        mainMenu.items = [mainMenuItem]
+
+        // CR-0002 Phase 3: install the Presentation Backend submenu as
+        // a second top-level menu item alongside MainMenu (FR-5).
+        let backendSubmenu = PresentationBackendSubmenu()
+        presentationBackendSubmenu = backendSubmenu
+
+        mainMenu.items = [mainMenuItem, backendSubmenu.menuItem]
         NSApplication.shared.mainMenu = mainMenu
 
         store.dispatch(AppDelegateAction.didFinishLaunching)
