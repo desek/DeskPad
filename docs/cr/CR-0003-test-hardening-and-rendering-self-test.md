@@ -2,14 +2,15 @@
 name: cr-test-hardening-and-rendering-self-test
 description: Raise unit test coverage of the CR-0001 capture and render pipeline to approximately 95 to 96 percent overall (100 percent per file outside two TCC-bound files totalling 159 lines, namely `capture.live_stream_handle.swift` at 94 lines and `capture.virtual_display_filter.swift` at 65 lines), and add a three-layer autonomous rendering self-test so the white-window failure class is machine-detectable without human eyes.
 id: "CR-0003"
-status: "draft"
+status: "completed"
 date: 2026-06-05
 requestor: desek
 stakeholders:
   - DeskPad maintainers (Stengo)
   - End users on macOS 15 and later who rely on the mirror staying visible
 source-branch: cr/gpu-rendering
-source-commit: cc6842d
+source-commit: 78a1fea
+completed-date: 2026-06-05
 priority: "high"
 target-version: "next-patch"
 ---
