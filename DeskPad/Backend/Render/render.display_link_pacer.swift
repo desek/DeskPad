@@ -20,16 +20,28 @@ import QuartzCore
 /// `MTLDrawable.present(at:)` aligned to the upcoming vsync (FR-17,
 /// AC-16). Test paths construct a synthetic instance with zero
 /// timestamps.
-public struct PacerTick: Sendable {
+public struct PacerTick: @unchecked Sendable {
     /// Target presentation time on the host clock; the renderer hands
     /// this verbatim to `MTLDrawable.present(at:)`.
     public let targetPresentationTimestamp: CFTimeInterval
     /// Per-tick anticipated refresh interval. Surfaced for diagnostics.
     public let targetTimestamp: CFTimeInterval
+    /// Drawable vended by `CAMetalDisplayLink.Update`. When a metal
+    /// display link is attached to a layer, drawables MUST be consumed
+    /// from the link's update rather than `layer.nextDrawable()`; the
+    /// two paths conflict and `nextDrawable()` starves (returns nil),
+    /// which presented as an all-white window. Nil in tests and on the
+    /// legacy tick path, where the renderer falls back to the layer.
+    public let drawable: (any CAMetalDrawable)?
 
-    public init(targetPresentationTimestamp: CFTimeInterval = 0, targetTimestamp: CFTimeInterval = 0) {
+    public init(
+        targetPresentationTimestamp: CFTimeInterval = 0,
+        targetTimestamp: CFTimeInterval = 0,
+        drawable: (any CAMetalDrawable)? = nil
+    ) {
         self.targetPresentationTimestamp = targetPresentationTimestamp
         self.targetTimestamp = targetTimestamp
+        self.drawable = drawable
     }
 }
 
@@ -109,7 +121,8 @@ extension DisplayLinkPacer: CAMetalDisplayLinkDelegate {
     ) {
         let tickContext = PacerTick(
             targetPresentationTimestamp: update.targetPresentationTimestamp,
-            targetTimestamp: update.targetTimestamp
+            targetTimestamp: update.targetTimestamp,
+            drawable: update.drawable
         )
         MainActor.assumeIsolated {
             tick(tickContext)

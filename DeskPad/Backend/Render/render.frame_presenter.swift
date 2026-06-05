@@ -59,7 +59,9 @@ public final class FramePresenter {
     public func present(tick: PacerTick) {
         guard let captured = streamOutput.latestCapturedSurface else { return }
         guard let texture = textureCache.texture(for: captured.surface) else { return }
-        guard let drawable = hostView.metalLayer.nextDrawable() else { return }
+        // Prefer the link-vended drawable (see PacerTick.drawable); fall
+        // back to the layer only on the test/legacy tick path.
+        guard let drawable = tick.drawable ?? hostView.metalLayer.nextDrawable() else { return }
         guard let cb = commandQueue?.makeCommandBuffer() else { return }
         guard let pipeline = getPipeline() else { return }
         _ = pipeline.draw(into: drawable.texture, from: texture, commandBuffer: cb)

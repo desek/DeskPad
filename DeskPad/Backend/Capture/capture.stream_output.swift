@@ -151,7 +151,16 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
 
     private func publish(surface: IOSurface) {
         let now = CACurrentMediaTime()
-        lock.withLock { $0 = CapturedSurface(surface: surface, ingestHostTime: now) }
+        let isFirst = lock.withLock { state in
+            let wasEmpty = state == nil
+            state = CapturedSurface(surface: surface, ingestHostTime: now)
+            return wasEmpty
+        }
+        // One-shot arrival marker: proves capture-side frame flow in the
+        // log without per-frame log volume.
+        if isFirst {
+            log.notice("first frame ingested (\(IOSurfaceGetWidth(surface))x\(IOSurfaceGetHeight(surface)))")
+        }
         updateArrival(at: now)
         let onArrival = handlerLock.withLock { $0.onArrival }
         onArrival?()
