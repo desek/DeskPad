@@ -112,17 +112,21 @@ pipeline's energy efficiency outweighs interactive latency.
 
 There are three ways to select a backend, in increasing precedence:
 
-1. **Menu** (runtime, persists): the **View** menu contains a
-   **Presentation Backend** submenu with **Metal (low latency)** and
-   **AVSampleBufferDisplayLayer (energy efficient)**. Selecting an item
-   tears down the active backend, swaps the host view, brings up the
-   new backend, and keeps the `SCStream` capture session running with
-   no permission re-prompt. The choice is written to `UserDefaults`.
-2. **UserDefaults key** (persisted): the `DeskPadPresentationBackend`
+1. **Menu** (runtime, persists): the main menu bar contains a
+   top-level **Presentation Backend** menu (installed as a sibling of
+   the application menu, with no parent menu) with **Metal (low
+   latency)** and **AVSampleBufferDisplayLayer (energy efficient)**.
+   Selecting an item tears down the active backend, swaps the host
+   view, brings up the new backend, and keeps the `SCStream` capture
+   session running with no permission re-prompt. The choice is written
+   to `UserDefaults`.
+2. **UserDefaults key** (persisted): the `DeskPad.presentationBackend`
    user default takes the string values `metal` or `avsbdl`. Set it
    from the shell with
-   `defaults write com.stengo.DeskPad DeskPadPresentationBackend avsbdl`.
-   Invalid values log a warning and fall back to `metal`.
+   `defaults write com.stengo.DeskPad "DeskPad.presentationBackend" avsbdl`.
+   Invalid values log a warning and fall back to `metal`. The next
+   launch reads this value during `CaptureRenderCoordinator.init` and
+   activates the selected backend at startup.
 3. **Launch argument** (per-launch, does not persist): pass
    `-DeskPadPresentationBackend avsbdl` (or `metal`) on the command
    line. The launch argument overrides the persisted user default for

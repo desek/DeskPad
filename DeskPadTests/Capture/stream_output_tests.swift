@@ -54,4 +54,68 @@ final class StreamOutputTests: XCTestCase {
         let publishedSurface = try XCTUnwrap(output.latestSurface)
         XCTAssertEqual(IOSurfaceGetID(publishedSurface), sourceID)
     }
+
+    /// CR-0002 FR-2: when ingestion runs through the `SCStreamOutput`
+    /// path, the published `CapturedSurface` carries the source
+    /// `CMSampleBuffer` so the `PresentationBackend.enqueue(_:)`
+    /// hand-off does not need a second IOSurface extraction. Asserts
+    /// against `latestCapturedSurface?.sampleBuffer` directly.
+    func testIngestPublishesSourceCMSampleBuffer() throws {
+        let width = 32
+        let height = 32
+        let surfaceProperties: [IOSurfacePropertyKey: Any] = [
+            .width: width,
+            .height: height,
+            .bytesPerElement: 4,
+            .pixelFormat: kCVPixelFormatType_32BGRA,
+        ]
+        let surface = try XCTUnwrap(IOSurface(properties: surfaceProperties))
+        let sourceID = IOSurfaceGetID(surface)
+
+        let attrs: [String: Any] = [
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:] as CFDictionary,
+        ]
+        var unmanagedPixelBuffer: Unmanaged<CVPixelBuffer>?
+        let status = CVPixelBufferCreateWithIOSurface(
+            kCFAllocatorDefault, surface, attrs as CFDictionary, &unmanagedPixelBuffer
+        )
+        XCTAssertEqual(status, kCVReturnSuccess)
+        let pb = try XCTUnwrap(unmanagedPixelBuffer).takeRetainedValue()
+
+        var formatDesc: CMVideoFormatDescription?
+        XCTAssertEqual(
+            CMVideoFormatDescriptionCreateForImageBuffer(
+                allocator: kCFAllocatorDefault, imageBuffer: pb,
+                formatDescriptionOut: &formatDesc
+            ),
+            noErr
+        )
+        let fmt = try XCTUnwrap(formatDesc)
+        var timing = CMSampleTimingInfo(
+            duration: .invalid,
+            presentationTimeStamp: CMTime(value: 0, timescale: 60),
+            decodeTimeStamp: .invalid
+        )
+        var sampleBuffer: CMSampleBuffer?
+        XCTAssertEqual(
+            CMSampleBufferCreateForImageBuffer(
+                allocator: kCFAllocatorDefault, imageBuffer: pb,
+                dataReady: true, makeDataReadyCallback: nil,
+                refcon: nil, formatDescription: fmt,
+                sampleTiming: &timing, sampleBufferOut: &sampleBuffer
+            ),
+            noErr
+        )
+        let sb = try XCTUnwrap(sampleBuffer)
+
+        let output = StreamOutput()
+        output.publishForTest(sampleBuffer: sb)
+
+        let captured = try XCTUnwrap(output.latestCapturedSurface)
+        XCTAssertEqual(IOSurfaceGetID(captured.surface), sourceID)
+        let republished = try XCTUnwrap(captured.sampleBuffer)
+        let republishedPB = try XCTUnwrap(CMSampleBufferGetImageBuffer(republished))
+        let republishedSurfaceRef = try XCTUnwrap(CVPixelBufferGetIOSurface(republishedPB))
+        XCTAssertEqual(IOSurfaceGetID(republishedSurfaceRef.takeUnretainedValue()), sourceID)
+    }
 }

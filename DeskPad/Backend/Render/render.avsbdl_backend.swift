@@ -5,30 +5,16 @@
 //  @agents-index CR-0002 Phase 2: the `AVSampleBufferDisplayLayer`-based
 //  `PresentationBackend`. Drives every enqueue, flush, status read, and
 //  notification observation through the layer's modern
-//  `sampleBufferRenderer` (`AVSampleBufferVideoRenderer`), declared at
-//  `AVSampleBufferDisplayLayer.h:303` and `API_AVAILABLE(macos(14.0))`
-//  which is satisfied unconditionally by CR-0001's macOS 15.0
-//  deployment target. The deprecated direct-on-layer methods
-//  (`enqueueSampleBuffer:`, `flush`, `flushAndRemoveImage`, `status`,
-//  `error`, `readyForMoreMediaData`, `requiresFlushToResumeDecoding`,
-//  `timebase`) per `AVSampleBufferDisplayLayer.h` lines 94..226 are
-//  **never** referenced (CR-0002 FR-7, AC-8).
-//
-//  Each enqueued `CMSampleBuffer` is stamped with
-//  `kCMSampleAttachmentKey_DisplayImmediately = kCFBooleanTrue`
-//  (CR-0002 FR-8); the renderer is **not** combined with a control
-//  timebase or `AVSampleBufferRenderSynchronizer` (CR-0002 FR-9).
-//  Readiness is gated on `readyForMoreMediaData`; not-ready buffers are
-//  dropped with rate-limited logging (CR-0002 FR-13). KVO of `status`
-//  and the `DidFailToDecode` / `RequiresFlushToResumeDecoding`
-//  notifications all trigger the same flush-and-resume recovery
-//  (CR-0002 FR-10, FR-11). `presentedFrameCount` increments on every
-//  readiness-gated successful enqueue so the CR-0003
-//  `PresentStallWatchdog` works backend-agnostically (CR-0002 FR-18).
-//
-//  Phase 2 wires this backend behind a not-yet-exposed entry point;
-//  tests reach it via the test-only `init(renderer:hostView:)`
-//  constructor. The toggle and live-switch come in Phase 3.
+//  `sampleBufferRenderer` (`AVSampleBufferVideoRenderer`); the
+//  deprecated direct-on-layer methods are never referenced (FR-7, AC-8).
+//  Display-immediately attachment stamped on every buffer (FR-8); no
+//  synchronizer / control timebase (FR-9). Readiness gated on
+//  `readyForMoreMediaData`; not-ready buffers dropped with rate-limited
+//  logging (FR-13). KVO of `status` and the `DidFailToDecode` /
+//  `RequiresFlushToResumeDecoding` notifications all trigger the same
+//  flush-and-resume recovery (FR-10, FR-11); the install routines live
+//  in `render.avsbdl_backend_observers.swift` so this file honours the
+//  200-LOC small-file convention.
 //
 
 import AppKit
@@ -38,26 +24,11 @@ import Foundation
 
 /// Abstraction over the subset of `AVSampleBufferVideoRenderer` the
 /// backend uses, so tests can substitute a spy without instantiating a
-/// real `AVSampleBufferDisplayLayer`. The production conformance is the
-/// host layer's `sampleBufferRenderer`; the spy in
-/// `DeskPadTests/Render/avsbdl_backend_*` records calls and stubs
-/// readiness.
+/// real `AVSampleBufferDisplayLayer`.
 @MainActor
 public protocol AVSBDLSampleBufferRendering: AnyObject {
-    /// Mirrors `AVQueuedSampleBufferRendering.readyForMoreMediaData`
-    /// (`AVQueuedSampleBufferRendering.h:96`). Checked before every
-    /// enqueue per CR-0002 FR-13.
     var isReadyForMoreMediaData: Bool { get }
-
-    /// Mirrors
-    /// `AVSampleBufferVideoRenderer.enqueueSampleBuffer:`
-    /// (`AVSampleBufferVideoRenderer.h:55`), the modern replacement for
-    /// the deprecated layer-level method.
     func enqueueSampleBuffer(_ buffer: CMSampleBuffer)
-
-    /// Mirrors
-    /// `AVSampleBufferVideoRenderer.flushWithRemovalOfDisplayedImage:completionHandler:`
-    /// (`AVSampleBufferVideoRenderer.h:67`).
     func flushWithRemovalOfDisplayedImage(_ removeImage: Bool, completion: @escaping @Sendable () -> Void)
 }
 
@@ -66,26 +37,22 @@ public protocol AVSBDLSampleBufferRendering: AnyObject {
 public final class AVSBDLBackend: NSObject, PresentationBackend {
     private let hostViewImpl: NSView
     private let renderer: AVSBDLSampleBufferRendering
-    private let log = Logger(category: "render")
+    let log = Logger(category: "render")
 
     /// CR-0002 FR-18: monotonic count of successful, readiness-gated
-    /// enqueues. Read by the coordinator and surfaced to the CR-0003
-    /// `PresentStallWatchdog`. Dropped frames are excluded.
+    /// enqueues. Read by the coordinator and the CR-0003 watchdog.
     public private(set) var presentedFrameCount: Int = 0
 
-    private var droppedFrameCount: Int = 0
-    private var lastDropLogTime: Date?
+    var droppedFrameCount: Int = 0
+    var lastDropLogTime: Date?
     private var lastErrorDescription: String?
     private var hasBeenConfigured: Bool = false
-    private var statusObservation: NSKeyValueObservation?
+    var statusObservation: NSKeyValueObservation?
+    var notificationObservers: [NSObjectProtocol] = []
 
-    private var notificationObservers: [NSObjectProtocol] = []
-
-    /// Production constructor. Builds an `AVSBDLHostView`, reads its
-    /// `sampleBufferRenderer`, and wires KVO + notification recovery.
+    /// Production constructor.
     override public convenience init() {
         let host = AVSBDLHostView(frame: .zero)
-        // Force layer instantiation so `sampleBufferRenderer` is available.
         _ = host.layer
         let layerRenderer = host.sampleBufferDisplayLayer.sampleBufferRenderer
         self.init(
@@ -96,8 +63,7 @@ public final class AVSBDLBackend: NSObject, PresentationBackend {
     }
 
     /// Test-only constructor that accepts an injected renderer and host
-    /// view. The Phase 2 tests use this entry point because the CR
-    /// keeps the toggle and the production wiring behind Phase 3.
+    /// view. Phase 2 tests reach the backend through this entry point.
     public init(
         renderer: AVSBDLSampleBufferRendering,
         hostView: NSView,
@@ -111,11 +77,6 @@ public final class AVSBDLBackend: NSObject, PresentationBackend {
             installNotificationObservers(for: systemRenderer)
         }
     }
-
-    // Cleanup runs through `teardown()`; deinit is intentionally a
-    // no-op so it stays nonisolated-Sendable-safe under Swift 6 strict
-    // concurrency. Callers (the coordinator) drive `teardown()` on the
-    // main actor before releasing the backend (CR-0002 FR-6).
 
     public var hostView: NSView { hostViewImpl }
 
@@ -138,11 +99,9 @@ public final class AVSBDLBackend: NSObject, PresentationBackend {
                 semaphore.signal()
             }
             // CR-0002 Risk 5: bounded wait so a stuck completion does
-            // not stall the reconfigure path. The next enqueue carries
-            // `kCMSampleAttachmentKey_DisplayImmediately` and replaces
-            // whatever survived per `AVSampleBufferDisplayLayer.h:117`.
+            // not stall the reconfigure path.
             _ = semaphore.wait(timeout: .now() + .seconds(1))
-            log.notice("AVSBDLBackend reconfigure flush completed (or timed out)")
+            log.notice("backend=avsbdl reconfigure flush completed (or timed out)")
         }
         let newRect = CGRect(origin: .zero, size: displaySize)
         hostViewImpl.frame = newRect
@@ -153,9 +112,7 @@ public final class AVSBDLBackend: NSObject, PresentationBackend {
         hasBeenConfigured = true
     }
 
-    /// CR-0002 FR-7, FR-8, FR-13: readiness-gate, stamp
-    /// display-immediately, enqueue, increment counter. Drops are
-    /// counted and logged at most once per second.
+    /// CR-0002 FR-7, FR-8, FR-13.
     public func enqueue(_ sampleBuffer: CMSampleBuffer) {
         guard renderer.isReadyForMoreMediaData else {
             droppedFrameCount += 1
@@ -164,7 +121,7 @@ public final class AVSBDLBackend: NSObject, PresentationBackend {
         }
         guard applyDisplayImmediatelyAttachment(sampleBuffer) else {
             droppedFrameCount += 1
-            log.warning("AVSBDLBackend dropped buffer: could not set DisplayImmediately attachment")
+            log.warning("backend=avsbdl dropped buffer: could not set DisplayImmediately attachment")
             return
         }
         renderer.enqueueSampleBuffer(sampleBuffer)
@@ -178,76 +135,19 @@ public final class AVSBDLBackend: NSObject, PresentationBackend {
         notificationObservers.removeAll()
         statusObservation?.invalidate()
         statusObservation = nil
-        log.info("AVSBDLBackend teardown complete")
+        log.info("backend=avsbdl teardown complete")
     }
 
     /// Test entry point: external triggers (e.g. simulated decode
-    /// failure notification) call into this to exercise the recovery
-    /// path without going through Notification posting.
+    /// failure notification) drive this to exercise the recovery path
+    /// without going through `NotificationCenter`.
     public func triggerRecovery(reason: String, errorDescription: String?) {
         if let errorDescription {
             lastErrorDescription = errorDescription
-            log.error("AVSBDLBackend recovery: \(reason) error=\(errorDescription)")
+            log.error("backend=avsbdl recovery: \(reason) error=\(errorDescription)")
         } else {
-            log.notice("AVSBDLBackend recovery: \(reason)")
+            log.notice("backend=avsbdl recovery: \(reason)")
         }
         renderer.flushWithRemovalOfDisplayedImage(true) {}
     }
-
-    // MARK: - KVO
-
-    private func installKVO(on systemRenderer: AVSampleBufferVideoRenderer) {
-        // `observe(_:options:changeHandler:)` returns an
-        // `NSKeyValueObservation` that we invalidate in `teardown()`.
-        // The change handler runs on whatever thread KVO fires on;
-        // we extract `Sendable` values (the status enum + an optional
-        // String description) before hopping to the main actor.
-        statusObservation = systemRenderer.observe(\.status, options: [.new]) { [weak self] rendererObj, _ in
-            let status: AVQueuedSampleBufferRenderingStatus = rendererObj.status
-            let description: String? = rendererObj.error?.localizedDescription
-            guard status == .failed else { return }
-            Task { @MainActor [weak self] in
-                self?.triggerRecovery(reason: "status=failed", errorDescription: description)
-            }
-        }
-    }
-
-    // MARK: - Notifications
-
-    private func installNotificationObservers(for systemRenderer: AVSampleBufferVideoRenderer) {
-        let center = NotificationCenter.default
-        let didFailToken = center.addObserver(
-            forName: AVSampleBufferVideoRenderer.didFailToDecodeNotification,
-            object: systemRenderer, queue: .main
-        ) { [weak self] note in
-            // Extract `Sendable` values up front so nothing
-            // non-Sendable crosses the actor hop.
-            let errorDescription = (note.userInfo?[AVSampleBufferVideoRenderer.didFailToDecodeNotificationErrorKey] as? NSError)?.localizedDescription
-            Task { @MainActor [weak self] in
-                self?.triggerRecovery(reason: "DidFailToDecode", errorDescription: errorDescription)
-            }
-        }
-        let flushToken = center.addObserver(
-            forName: AVSampleBufferVideoRenderer.requiresFlushToResumeDecodingDidChangeNotification,
-            object: systemRenderer, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.triggerRecovery(reason: "RequiresFlushToResumeDecoding", errorDescription: nil)
-            }
-        }
-        notificationObservers = [didFailToken, flushToken]
-    }
-
-    private func rateLimitedLogDrop() {
-        let now = Date()
-        if let last = lastDropLogTime, now.timeIntervalSince(last) < 1.0 {
-            return
-        }
-        lastDropLogTime = now
-        log.warning("AVSBDLBackend dropped frame: readyForMoreMediaData=false (total=\(droppedFrameCount))")
-    }
 }
-
-// `AVSBDLSystemRendererAdapter` lives in
-// `render.avsbdl_system_renderer_adapter.swift` to keep this file under
-// the project's small-file 200-line convention (CR-0002 Phase 4).

@@ -121,6 +121,26 @@ public final class CaptureRenderCoordinator {
             guard let identifier = PresentationBackendIdentifier(rawValue: raw) else { return }
             Task { @MainActor in self?.switchBackend(to: identifier, trigger: trigger) }
         }
+        // CR-0002 Phase 3 (FR-3, FR-4, AC-4, AC-5, AC-6): resolve the
+        // persisted UserDefaults value and the launch argument, and if
+        // the resolution selects a non-Metal backend (or surfaces an
+        // invalid value) act on it at startup. `--self-test` short-
+        // circuits the resolution per FR-19 / AC-21 so the self-test
+        // always runs on Metal regardless of preference.
+        let args = CommandLine.arguments
+        if !args.contains(SelfTestLaunchDispatch.kSelfTestFlag) {
+            let selection = PresentationBackendKey.resolve(
+                arguments: args, defaults: .standard
+            )
+            if selection.source == .fallbackInvalidValue {
+                log.warning("backend=metal selection fallback: invalid value=\"\(selection.rawInvalidValue ?? "")\" source=fallbackInvalidValue")
+            } else {
+                log.info("backend=\(selection.identifier.rawValue) selection resolved source=\(selection.source.rawValue)")
+            }
+            if selection.identifier != .metal {
+                switchBackend(to: selection.identifier, trigger: "startup")
+            }
+        }
     }
 
     // Observer removal is intentionally not in `deinit`: the coordinator
@@ -177,6 +197,13 @@ public final class CaptureRenderCoordinator {
         let width = Int(resolution.width * scaleFactor)
         let height = Int(resolution.height * scaleFactor)
         hostView.setDrawablePixelSize(CGSize(width: width, height: height))
+        // CR-0002 FR-12 / AC-12: forward geometry through the
+        // `PresentationBackend.configure(displaySize:scaleFactor:)`
+        // surface so the AVSBDL backend can flush-on-reconfigure and
+        // the Metal backend can keep its drawable size in lock-step
+        // through the protocol seam rather than the concrete host view.
+        do { try currentBackend.configure(displaySize: resolution, scaleFactor: scaleFactor) }
+        catch { log.error("backend=\(currentBackend.diagnostics.identifier) configure failed: \(String(describing: error))") }
         do { try await streamCoordinator.updateConfiguration(width: width, height: height) }
         catch { log.error("updateConfiguration failed: \(String(describing: error))") }
     }

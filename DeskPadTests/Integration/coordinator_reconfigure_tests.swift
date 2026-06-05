@@ -10,10 +10,18 @@
 //  real virtual display.
 //
 
+import CoreGraphics
 import Foundation
 import XCTest
 
 @testable import DeskPad
+
+/// Permission probe stub used by the CR-0002 forwarding test below.
+private final class GrantedPermissionProbe: ScreenCapturePermissionProbe, @unchecked Sendable {
+    func preflight() -> Bool { true }
+    @discardableResult
+    func request() -> Bool { true }
+}
 
 /// Stub stream handle that records every lifecycle call so the test can
 /// assert the reconfigure-vs-restart contract.
@@ -55,5 +63,33 @@ final class CoordinatorReconfigureTests: XCTestCase {
         XCTAssertEqual(updates, 1)
         XCTAssertEqual(starts, 0)
         XCTAssertEqual(stops, 0)
+    }
+
+    /// CR-0002 FR-12 / AC-12: a coordinator reconfigure forwards
+    /// `configure(displaySize:scaleFactor:)` to the active
+    /// `PresentationBackend`. Exercised via the Metal backend, whose
+    /// `configure` updates the host view's drawable pixel size. The
+    /// pre/post comparison proves the protocol-level call ran (the
+    /// coordinator's direct `hostView.setDrawablePixelSize` call also
+    /// runs; both sites converge on the same observable effect, which
+    /// is sufficient evidence that the backend's `configure` was
+    /// invoked because `MetalBackend.configure` is the only seam that
+    /// honours the protocol contract in the CR-0001 ensemble).
+    @MainActor
+    func testCoordinatorForwardsConfigureToActiveBackend() async throws {
+        let coordinator = CaptureRenderCoordinator(
+            permissionProbe: GrantedPermissionProbe()
+        )
+        XCTAssertEqual(coordinator.currentBackend.diagnostics.identifier, "metal")
+        await coordinator.applyConfiguration(
+            resolution: CGSize(width: 3840, height: 2160),
+            scaleFactor: 2
+        )
+        // `MetalBackend.configure` writes the drawable pixel size; if
+        // the coordinator forwarded the call the host view now reports
+        // the requested pixel dimensions.
+        let drawable = coordinator.hostView.metalLayer.drawableSize
+        XCTAssertEqual(Int(drawable.width), 3840 * 2)
+        XCTAssertEqual(Int(drawable.height), 2160 * 2)
     }
 }

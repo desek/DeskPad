@@ -102,6 +102,6 @@ public final class MetalBackend: PresentationBackend {
         // (CR-0002 FR-6). The Metal path has no extra state to drop
         // beyond what `CaptureRenderCoordinator` deinit already
         // releases.
-        log.info("MetalBackend teardown: no-op (coordinator-owned ensemble)")
+        log.info("backend=metal teardown: no-op (coordinator-owned ensemble)")
     }
 }
