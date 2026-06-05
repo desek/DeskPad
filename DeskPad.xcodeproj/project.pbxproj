@@ -73,6 +73,9 @@
 		7D00000000000000000E0010 /* readback_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0104 /* readback_tests.swift */; };
 		7D00000000000000000E0004 /* selftest.loopback_pattern.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0105 /* selftest.loopback_pattern.swift */; };
 		7D00000000000000000E0011 /* loopback_pattern_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0106 /* loopback_pattern_tests.swift */; };
+		7D00000000000000000E0005 /* selftest.readback.sampling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0107 /* selftest.readback.sampling.swift */; };
+		7D00000000000000000E0012 /* selftest.presentation_backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0108 /* selftest.presentation_backend.swift */; };
+		7D00000000000000000E0013 /* subscriber_view_controller_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D00000000000000000E0109 /* subscriber_view_controller_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -146,6 +149,9 @@
 		7D00000000000000000E0104 /* readback_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = readback_tests.swift; sourceTree = "<group>"; };
 		7D00000000000000000E0105 /* selftest.loopback_pattern.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest.loopback_pattern.swift; sourceTree = "<group>"; };
 		7D00000000000000000E0106 /* loopback_pattern_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = loopback_pattern_tests.swift; sourceTree = "<group>"; };
+		7D00000000000000000E0107 /* selftest.readback.sampling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest.readback.sampling.swift; sourceTree = "<group>"; };
+		7D00000000000000000E0108 /* selftest.presentation_backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest.presentation_backend.swift; sourceTree = "<group>"; };
+		7D00000000000000000E0109 /* subscriber_view_controller_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = subscriber_view_controller_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -244,6 +250,8 @@
 				7D00000000000000000E0102 /* selftest.readback.swift */,
 				7D00000000000000000E0103 /* selftest.verdict_writer.swift */,
 				7D00000000000000000E0105 /* selftest.loopback_pattern.swift */,
+				7D00000000000000000E0107 /* selftest.readback.sampling.swift */,
+				7D00000000000000000E0108 /* selftest.presentation_backend.swift */,
 			);
 			path = SelfTest;
 			sourceTree = "<group>";
@@ -381,6 +389,7 @@
 			children = (
 				7B00000000000000000C0205 /* capture_render_coordinator_init_tests.swift */,
 				7B00000000000000000C020A /* app_delegate_tests.swift */,
+				7D00000000000000000E0109 /* subscriber_view_controller_tests.swift */,
 			);
 			path = Frontend;
 			sourceTree = "<group>";
@@ -591,6 +600,8 @@
 				7D00000000000000000E0002 /* selftest.readback.swift in Sources */,
 				7D00000000000000000E0003 /* selftest.verdict_writer.swift in Sources */,
 				7D00000000000000000E0004 /* selftest.loopback_pattern.swift in Sources */,
+				7D00000000000000000E0005 /* selftest.readback.sampling.swift in Sources */,
+				7D00000000000000000E0012 /* selftest.presentation_backend.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -627,6 +638,7 @@
 				7C00000000000000000D0002 /* present_stall_watchdog_tests.swift in Sources */,
 				7D00000000000000000E0010 /* readback_tests.swift in Sources */,
 				7D00000000000000000E0011 /* loopback_pattern_tests.swift in Sources */,
+				7D00000000000000000E0013 /* subscriber_view_controller_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
