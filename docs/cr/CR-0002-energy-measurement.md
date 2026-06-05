@@ -70,5 +70,24 @@ Assert AVSBDL's `presentedFrameCount` advances at a rate not less than
 
 ## Results
 
-(Empty until measured. Append a dated section with the Instruments
-artefact paths and the verdict.)
+### 2026-06-05: CPU-time proxy (pre-Instruments, Debug build)
+
+Not the formal NFR-1 measurement, but an early proxy taken after the live
+frame hand-off fix (`c6e6ebc`). Debug build signed with the pinned `.env`
+identity; 60 s `ps -o cputime=` window per backend after a 10 s settle, on
+an idle/static virtual display.
+
+| Backend | CPU time over 60 s | Approx. share of one core |
+|---------|--------------------|---------------------------|
+| metal   | 0.12 s             | ~0.2 percent              |
+| avsbdl  | 11.63 s            | ~19 percent               |
+
+Verdict: **provisional FAIL** on the CPU axis. The AVSBDL enqueue path
+runs at full capture rate with a per-frame `Task { @MainActor }` hop and
+renderer enqueue plus decode even on unchanged content, while the Metal
+pacer idles behind its dirty-bit gate. Before the formal Release-build
+Instruments Energy Log run, the AVSBDL path needs (1) dirty-gating of the
+enqueue equivalent to the Metal pacer's gate and (2) removal of the
+per-frame main-actor `Task` allocation. Until the formal measurement shows
+a strict improvement, the CR's shipping gate keeps the backend opt-in
+only. Cross-reference: addendum in `docs/cr/CR-0002-validation-report.md`.

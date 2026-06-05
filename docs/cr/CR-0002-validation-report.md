@@ -162,3 +162,42 @@ push hand-off does not regress the Metal pull path.
 
 Remaining FAIL / GAP: 0. Remaining PARTIAL: 0 unresolved; two carve-outs
 documented per the CR-0003 precedent.
+
+## Addendum 2026-06-05: first energy proxy measurement (NFR-1 at risk)
+
+A first out-of-band measurement was taken after the live frame hand-off fix
+(`c6e6ebc`), as a CPU-time proxy ahead of the Instruments Energy Log run
+specified in `docs/cr/CR-0002-energy-measurement.md`.
+
+Method: Debug build signed with the pinned `.env` identity; each backend
+launched via `-DeskPadPresentationBackend metal|avsbdl`, 10 s settle, then
+process CPU time sampled over a 60 s window (`ps -o cputime=`) on an
+idle/static virtual display (the NFR-1 representative workload).
+
+| Backend | CPU time over 60 s | Approx. share of one core |
+|---------|--------------------|---------------------------|
+| metal   | 0.12 s             | ~0.2 percent              |
+| avsbdl  | 11.63 s            | ~19 percent               |
+
+Verdict: the AVSBDL backend consumed roughly 100x more CPU time than the
+Metal backend on the static workload it is supposed to win on. The Metal
+path idles behind its dirty-bit gate; the AVSBDL path performs per-frame
+work (a `Task { @MainActor }` hop, attachment mutation, and renderer
+enqueue plus decode) at the full capture rate even when content is
+unchanged.
+
+Caveats: Debug build (`-Onone` inflates per-frame CPU cost), CPU time is
+not energy (no GPU or display-pipeline contribution), and the NFR-1
+contract calls for Instruments Energy Impact on a Release build over a
+5-minute window. The proxy is therefore indicative, not a formal NFR-1
+verdict.
+
+Consequence: NFR-1 / AC-16 move from PASS-with-carve-out to
+**AT-RISK-pending-measurement**. Per the CR's shipping gate ("if the
+measurement does not show a strict improvement ... the backend MUST NOT
+ship as a user-facing option"), the AVSBDL backend should not be promoted
+beyond opt-in until (a) the enqueue path is dirty-gated like the Metal
+pacer and the per-frame main-actor `Task` allocation is removed, and
+(b) the Release-build Instruments measurement in
+`docs/cr/CR-0002-energy-measurement.md` records a strict improvement.
+The same proxy numbers are recorded in that document's Results section.
