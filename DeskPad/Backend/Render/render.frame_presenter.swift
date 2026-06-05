@@ -65,11 +65,14 @@ public final class FramePresenter {
         guard let cb = commandQueue?.makeCommandBuffer() else { return }
         guard let pipeline = getPipeline() else { return }
         _ = pipeline.draw(into: drawable.texture, from: texture, commandBuffer: cb)
-        if tick.targetPresentationTimestamp > 0 {
-            cb.present(drawable, atTime: tick.targetPresentationTimestamp)
-        } else {
-            cb.present(drawable)
-        }
+        // Plain present, never present(atTime:). A CAMetalDisplayLink-
+        // vended drawable carries its own presentation schedule; adding
+        // an explicit time raises NSException inside CAMetalDrawable
+        // presentWithOptions: (observed as SIGABRT on the Metal
+        // completion queue). Vsync alignment comes from the link's tick
+        // cadence itself; tick.targetPresentationTimestamp remains in
+        // use for latency diagnostics only.
+        cb.present(drawable)
         let onError = onCommandBufferError
         cb.addCompletedHandler { completed in
             let nsError = completed.error as NSError?
