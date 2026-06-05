@@ -15,15 +15,6 @@ import Foundation
 import Metal
 import ScreenCaptureKit
 
-/// CR-0002 FR-2: `CMSampleBuffer` is not `Sendable` in Swift 6 strict
-/// concurrency. The capture-to-backend push hop completes synchronously
-/// during the SCK delivery callback's lifetime, so the buffer is alive
-/// for the entire actor hop; this wrapper carries it across without
-/// extending its lifetime beyond the hop.
-private struct UncheckedSampleBuffer: @unchecked Sendable {
-    let buffer: CMSampleBuffer
-}
-
 public enum CaptureRenderCoordinatorState: Sendable, Equatable {
     case idle
     case running
@@ -67,6 +58,11 @@ public final class CaptureRenderCoordinator {
     /// switch event. Removed in `deinit` (test-only path) and via
     /// `tearDownBackendSwitchObserver` when needed.
     private var backendSwitchObserver: NSObjectProtocol?
+    /// CR-0002 energy fix: coalescing capture-to-backend relay. Stored
+    /// so its lifetime matches the coordinator's; the sink closure reads
+    /// `currentBackend` on each delivery, so live backend switches need
+    /// no rewiring.
+    private var sampleBufferRelay: BackendSampleBufferRelay?
 
     public private(set) var state: CaptureRenderCoordinatorState = .idle {
         didSet { didSetState(from: oldValue) }
@@ -115,12 +111,15 @@ public final class CaptureRenderCoordinator {
         // CR-0001's pacer-pull model intact; the AVSBDL backend's
         // `enqueue` is the only sink that makes a frame visible on its
         // `AVSampleBufferDisplayLayer` (FR-7, AC-8).
-        streamOutput.setOnSampleBuffer { [weak self] buffer in
-            let wrapped = UncheckedSampleBuffer(buffer: buffer)
-            Task { @MainActor [weak self] in
-                self?.currentBackend.enqueue(wrapped.buffer)
-            }
+        // The relay coalesces capture-thread pushes into at most one
+        // in-flight MainActor hop with newest-frame-wins semantics,
+        // replacing the previous per-frame `Task { @MainActor }`
+        // allocation (CR-0002 energy fix, docs/cr/CR-0002-repl.md).
+        let relay = BackendSampleBufferRelay { [weak self] buffer in
+            self?.currentBackend.enqueue(buffer)
         }
+        sampleBufferRelay = relay
+        streamOutput.setOnSampleBuffer { relay.push($0) }
         let actorRef = streamCoordinator
         streamOutput.setStopErrorHandler { _ in Task { await actorRef.triggerRestart() } }
         presenter.setOnCommandBufferError { [weak self] error in

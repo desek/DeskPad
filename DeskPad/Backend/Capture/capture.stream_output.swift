@@ -173,7 +173,31 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
         of type: SCStreamOutputType
     ) {
         guard type == .screen else { return }
+        // Dirty gate (CR-0002 energy fix, docs/cr/CR-0002-repl.md):
+        // ScreenCaptureKit stamps every delivered buffer with an
+        // `SCStreamFrameInfo.status` attachment. Only `.complete`
+        // frames carry new pixel content; `.idle` frames repeat the
+        // previous surface on a timer. Publishing idle frames made the
+        // AVSBDL backend decode-and-present unchanged 4K content at
+        // the full capture rate (~19 percent of a core on a static
+        // workload) and made the Metal pacer re-present identical
+        // frames. Skipping them is the capture-side equivalent of the
+        // Metal pacer's dirty-bit gate.
+        guard frameStatus(of: sampleBuffer) == .complete else { return }
         ingest(sampleBuffer)
+    }
+
+    /// Read the `SCStreamFrameInfo.status` attachment SCK stamps on every
+    /// delivered buffer. Returns `nil` when the attachment is missing
+    /// (synthetic/test buffers), which callers treat as not-complete.
+    private func frameStatus(of sampleBuffer: CMSampleBuffer) -> SCFrameStatus? {
+        guard
+            let attachments = CMSampleBufferGetSampleAttachmentsArray(
+                sampleBuffer, createIfNecessary: false
+            ) as? [[SCStreamFrameInfo: Any]],
+            let rawStatus = attachments.first?[.status] as? Int
+        else { return nil }
+        return SCFrameStatus(rawValue: rawStatus)
     }
 
     // MARK: - SCStreamDelegate

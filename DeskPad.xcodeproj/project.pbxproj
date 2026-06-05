@@ -84,6 +84,7 @@
 		7E00000000000000000F0201 /* render.avsbdl_host_view.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0301 /* render.avsbdl_host_view.swift */; };
 		7E00000000000000000F0202 /* render.avsbdl_display_immediately_attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0302 /* render.avsbdl_display_immediately_attachment.swift */; };
 		7E00000000000000000F0203 /* render.avsbdl_backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0303 /* render.avsbdl_backend.swift */; };
+		7E00000000000000000F0221 /* render.backend_sample_buffer_relay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0321 /* render.backend_sample_buffer_relay.swift */; };
 		7E00000000000000000F0204 /* render.avsbdl_system_renderer_adapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0304 /* render.avsbdl_system_renderer_adapter.swift */; };
 		7E00000000000000000F0205 /* render.avsbdl_backend_observers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0305 /* render.avsbdl_backend_observers.swift */; };
 		7E00000000000000000F0210 /* avsbdl_host_view_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0310 /* avsbdl_host_view_tests.swift */; };
@@ -196,6 +197,7 @@
 		7E00000000000000000F0301 /* render.avsbdl_host_view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.avsbdl_host_view.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0302 /* render.avsbdl_display_immediately_attachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.avsbdl_display_immediately_attachment.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0303 /* render.avsbdl_backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.avsbdl_backend.swift; sourceTree = "<group>"; };
+		7E00000000000000000F0321 /* render.backend_sample_buffer_relay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.backend_sample_buffer_relay.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0304 /* render.avsbdl_system_renderer_adapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.avsbdl_system_renderer_adapter.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0305 /* render.avsbdl_backend_observers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.avsbdl_backend_observers.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0310 /* avsbdl_host_view_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = avsbdl_host_view_tests.swift; sourceTree = "<group>"; };
@@ -384,6 +386,7 @@
 				7E00000000000000000F0103 /* render.metal_backend.swift */,
 				7E00000000000000000F0302 /* render.avsbdl_display_immediately_attachment.swift */,
 				7E00000000000000000F0303 /* render.avsbdl_backend.swift */,
+				7E00000000000000000F0321 /* render.backend_sample_buffer_relay.swift */,
 				7E00000000000000000F0304 /* render.avsbdl_system_renderer_adapter.swift */,
 				7E00000000000000000F0305 /* render.avsbdl_backend_observers.swift */,
 			);
@@ -740,6 +743,7 @@
 				7E00000000000000000F0201 /* render.avsbdl_host_view.swift in Sources */,
 				7E00000000000000000F0202 /* render.avsbdl_display_immediately_attachment.swift in Sources */,
 				7E00000000000000000F0203 /* render.avsbdl_backend.swift in Sources */,
+				7E00000000000000000F0221 /* render.backend_sample_buffer_relay.swift in Sources */,
 				7E00000000000000000F0204 /* render.avsbdl_system_renderer_adapter.swift in Sources */,
 				7E00000000000000000F0205 /* render.avsbdl_backend_observers.swift in Sources */,
 				7F0000000000000000100001 /* configuration.presentation_backend_key.swift in Sources */,

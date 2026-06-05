@@ -91,3 +91,19 @@ enqueue equivalent to the Metal pacer's gate and (2) removal of the
 per-frame main-actor `Task` allocation. Until the formal measurement shows
 a strict improvement, the CR's shipping gate keeps the backend opt-in
 only. Cross-reference: addendum in `docs/cr/CR-0002-validation-report.md`.
+
+### 2026-06-05 (later same day): proxy re-run after the dirty-gate fix
+
+Both prerequisites were implemented ad-hoc (SCK `.complete` frame-status
+dirty gate at the capture boundary; coalescing `BackendSampleBufferRelay`
+replacing the per-frame MainActor `Task`). Same proxy method as above:
+
+| Backend | CPU time over 60 s | Versus baseline |
+|---------|--------------------|-----------------|
+| metal   | 1.13 s             | content-driven; see note in `CR-0002-repl.md` |
+| avsbdl  | 0.66 s             | ~18x reduction (was 11.63 s) |
+
+Verdict: provisional FAIL on the CPU axis is **superseded**; AVSBDL is now
+strictly below Metal within the same session. The formal Release-build
+Instruments Energy Log run remains outstanding before NFR-1 is formally
+closed. Full finding and change log: `docs/cr/CR-0002-repl.md`.
