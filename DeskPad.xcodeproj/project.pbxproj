@@ -84,6 +84,7 @@
 		7E00000000000000000F0201 /* render.avsbdl_host_view.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0301 /* render.avsbdl_host_view.swift */; };
 		7E00000000000000000F0202 /* render.avsbdl_display_immediately_attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0302 /* render.avsbdl_display_immediately_attachment.swift */; };
 		7E00000000000000000F0203 /* render.avsbdl_backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0303 /* render.avsbdl_backend.swift */; };
+		7E00000000000000000F0204 /* render.avsbdl_system_renderer_adapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0304 /* render.avsbdl_system_renderer_adapter.swift */; };
 		7E00000000000000000F0210 /* avsbdl_host_view_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0310 /* avsbdl_host_view_tests.swift */; };
 		7E00000000000000000F0211 /* avsbdl_display_immediately_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0311 /* avsbdl_display_immediately_tests.swift */; };
 		7E00000000000000000F0212 /* avsbdl_backend_enqueue_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E00000000000000000F0312 /* avsbdl_backend_enqueue_tests.swift */; };
@@ -105,6 +106,8 @@
 		7F0000000000000000100014 /* live_switch_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100114 /* live_switch_tests.swift */; };
 		7F0000000000000000100015 /* adaptive_mode_no_op_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100115 /* adaptive_mode_no_op_tests.swift */; };
 		7F0000000000000000100016 /* selftest_forces_metal_backend_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100116 /* selftest_forces_metal_backend_tests.swift */; };
+		7F0000000000000000100018 /* no_deprecated_avsbdl_api_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100118 /* no_deprecated_avsbdl_api_tests.swift */; };
+		7F0000000000000000100019 /* no_em_dash_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100119 /* no_em_dash_tests.swift */; };
 		7F0000000000000000100017 /* present_stall_watchdog_backend_agnostic_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0000000000000000100117 /* present_stall_watchdog_backend_agnostic_tests.swift */; };
 /* End PBXBuildFile section */
 
@@ -190,6 +193,7 @@
 		7E00000000000000000F0301 /* render.avsbdl_host_view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.avsbdl_host_view.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0302 /* render.avsbdl_display_immediately_attachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.avsbdl_display_immediately_attachment.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0303 /* render.avsbdl_backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.avsbdl_backend.swift; sourceTree = "<group>"; };
+		7E00000000000000000F0304 /* render.avsbdl_system_renderer_adapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = render.avsbdl_system_renderer_adapter.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0310 /* avsbdl_host_view_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = avsbdl_host_view_tests.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0311 /* avsbdl_display_immediately_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = avsbdl_display_immediately_tests.swift; sourceTree = "<group>"; };
 		7E00000000000000000F0312 /* avsbdl_backend_enqueue_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = avsbdl_backend_enqueue_tests.swift; sourceTree = "<group>"; };
@@ -211,6 +215,9 @@
 		7F0000000000000000100114 /* live_switch_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = live_switch_tests.swift; sourceTree = "<group>"; };
 		7F0000000000000000100115 /* adaptive_mode_no_op_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = adaptive_mode_no_op_tests.swift; sourceTree = "<group>"; };
 		7F0000000000000000100116 /* selftest_forces_metal_backend_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = selftest_forces_metal_backend_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100118 /* no_deprecated_avsbdl_api_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = no_deprecated_avsbdl_api_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100119 /* no_em_dash_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = no_em_dash_tests.swift; sourceTree = "<group>"; };
+		7F0000000000000000100302 /* Compliance */ = {isa = PBXGroup; children = (7F0000000000000000100118 /* no_deprecated_avsbdl_api_tests.swift */, 7F0000000000000000100119 /* no_em_dash_tests.swift */); path = Compliance; sourceTree = "<group>"; };
 		7F0000000000000000100117 /* present_stall_watchdog_backend_agnostic_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = present_stall_watchdog_backend_agnostic_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -371,6 +378,7 @@
 				7E00000000000000000F0103 /* render.metal_backend.swift */,
 				7E00000000000000000F0302 /* render.avsbdl_display_immediately_attachment.swift */,
 				7E00000000000000000F0303 /* render.avsbdl_backend.swift */,
+				7E00000000000000000F0304 /* render.avsbdl_system_renderer_adapter.swift */,
 			);
 			path = Render;
 			sourceTree = "<group>";
@@ -468,6 +476,7 @@
 				7A00000000000000000F000C /* Performance */,
 				7D00000000000000000E0202 /* SelfTest */,
 				7F0000000000000000100202 /* Configuration */,
+				7F0000000000000000100302 /* Compliance */,
 			);
 			path = DeskPadTests;
 			sourceTree = "<group>";
@@ -722,6 +731,7 @@
 				7E00000000000000000F0201 /* render.avsbdl_host_view.swift in Sources */,
 				7E00000000000000000F0202 /* render.avsbdl_display_immediately_attachment.swift in Sources */,
 				7E00000000000000000F0203 /* render.avsbdl_backend.swift in Sources */,
+				7E00000000000000000F0204 /* render.avsbdl_system_renderer_adapter.swift in Sources */,
 				7F0000000000000000100001 /* configuration.presentation_backend_key.swift in Sources */,
 				7F0000000000000000100002 /* configuration.user_defaults.bootstrap.swift in Sources */,
 				7F0000000000000000100003 /* menu.presentation_backend_submenu.swift in Sources */,
@@ -781,6 +791,8 @@
 				7F0000000000000000100014 /* live_switch_tests.swift in Sources */,
 				7F0000000000000000100015 /* adaptive_mode_no_op_tests.swift in Sources */,
 				7F0000000000000000100016 /* selftest_forces_metal_backend_tests.swift in Sources */,
+				7F0000000000000000100018 /* no_deprecated_avsbdl_api_tests.swift in Sources */,
+				7F0000000000000000100019 /* no_em_dash_tests.swift in Sources */,
 				7F0000000000000000100017 /* present_stall_watchdog_backend_agnostic_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

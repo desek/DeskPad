@@ -248,27 +248,6 @@ public final class AVSBDLBackend: NSObject, PresentationBackend {
     }
 }
 
-/// Production adapter that conforms an `AVSampleBufferVideoRenderer` to
-/// the `AVSBDLSampleBufferRendering` protocol the backend talks to. The
-/// adapter is the only file in the project that calls the modern
-/// `enqueueSampleBuffer(_:)` and
-/// `flushWithRemovalOfDisplayedImage(_:completionHandler:)` methods on
-/// the system renderer, keeping the test seam clean.
-@MainActor
-final class AVSBDLSystemRendererAdapter: AVSBDLSampleBufferRendering {
-    private let renderer: AVSampleBufferVideoRenderer
-
-    init(renderer: AVSampleBufferVideoRenderer) {
-        self.renderer = renderer
-    }
-
-    var isReadyForMoreMediaData: Bool { renderer.isReadyForMoreMediaData }
-
-    func enqueueSampleBuffer(_ buffer: CMSampleBuffer) {
-        renderer.enqueue(buffer)
-    }
-
-    func flushWithRemovalOfDisplayedImage(_ removeImage: Bool, completion: @escaping @Sendable () -> Void) {
-        renderer.flush(removingDisplayedImage: removeImage, completionHandler: completion)
-    }
-}
+// `AVSBDLSystemRendererAdapter` lives in
+// `render.avsbdl_system_renderer_adapter.swift` to keep this file under
+// the project's small-file 200-line convention (CR-0002 Phase 4).

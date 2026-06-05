@@ -99,3 +99,53 @@ git-ignored and must not be committed.
 See `docs/cr/CR-0003-test-hardening-and-rendering-self-test.md` for the
 full design and `docs/cr/CR-0003-coverage-summary.md` for the per-file
 test coverage table and documented TCC-bound carve-outs.
+
+# Presentation backends
+
+DeskPad ships two presentation backends behind a single capture pipeline.
+The default is the Metal backend from CR-0001; an opt-in
+`AVSampleBufferDisplayLayer` (AVSBDL) backend is available from CR-0002
+for the screen-sharing and static-content use case where the system video
+pipeline's energy efficiency outweighs interactive latency.
+
+## How to switch backends
+
+There are three ways to select a backend, in increasing precedence:
+
+1. **Menu** (runtime, persists): the **View** menu contains a
+   **Presentation Backend** submenu with **Metal (low latency)** and
+   **AVSampleBufferDisplayLayer (energy efficient)**. Selecting an item
+   tears down the active backend, swaps the host view, brings up the
+   new backend, and keeps the `SCStream` capture session running with
+   no permission re-prompt. The choice is written to `UserDefaults`.
+2. **UserDefaults key** (persisted): the `DeskPadPresentationBackend`
+   user default takes the string values `metal` or `avsbdl`. Set it
+   from the shell with
+   `defaults write com.stengo.DeskPad DeskPadPresentationBackend avsbdl`.
+   Invalid values log a warning and fall back to `metal`.
+3. **Launch argument** (per-launch, does not persist): pass
+   `-DeskPadPresentationBackend avsbdl` (or `metal`) on the command
+   line. The launch argument overrides the persisted user default for
+   the current launch only.
+
+The rendering self-test (`--self-test`) always runs on the Metal backend
+regardless of preference; the AVSBDL backend cannot satisfy the
+read-back-and-assert path that Layer 2 and Layer 3 rely on.
+
+## Metal versus AVSBDL trade-offs
+
+| Aspect                         | Metal (default)                          | AVSBDL (opt-in)                                  |
+|--------------------------------|------------------------------------------|--------------------------------------------------|
+| Latency                        | Lowest, paced by `CAMetalDisplayLink`    | Higher, paced by the system video pipeline       |
+| Energy / power efficiency      | Higher CPU+GPU cost on static workloads  | Lower energy on static and screen-sharing loads  |
+| Adaptive low-latency mode      | Applies (CR-0001)                        | Not applicable, disabled while AVSBDL is active  |
+| Rendering self-test support    | Yes (read-back, gradient assertions)     | No, self-test forces Metal                       |
+| Best fit                       | Interactive, animated, low-latency work  | Screen-sharing, document mirroring, idle content |
+
+When the AVSBDL backend is active, requests from the adaptive mode
+controller to engage low-latency mode are no-ops and are logged once.
+The CR-0003 present-stall watchdog continues to work backend-agnostically
+because both backends expose a monotonic `presentedFrameCount`.
+
+See `docs/cr/CR-0002-avsamplebufferdisplaylayer-backend.md` for the full
+design.
