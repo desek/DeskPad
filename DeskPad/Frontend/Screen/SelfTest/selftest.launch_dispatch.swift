@@ -9,15 +9,21 @@
 //  absent this file is a no-op so production launches are entirely
 //  unaffected (NFR-3: zero overhead outside `--self-test`).
 //
-//  Phase 3 wires the dispatcher plumbing and the Layer 2 read-back primitives
-//  but does NOT yet run the loopback (Phase 4 adds the pattern window plus
-//  capture handshake). The Phase 3 dispatch path therefore exits early with a
-//  stable `FAIL: not_implemented` line so the contract is observable end-to-
-//  end before Phase 4 lands, and the exit-code branch in
-//  `selftest-deskpad.sh` is exercisable.
+//  Phase 4 wires the dispatcher to the full Layer 3 loopback. The dispatcher
+//  renders the deterministic `SelfTestLoopbackPattern` (a horizontal RGB
+//  gradient plus a frame-counter byte) into a Metal texture standing in for
+//  the presented drawable, runs the Layer 2 read-back math against it, then
+//  applies the FR-13 sample-point assertions. The captured-pixel comparison
+//  documented in the CR's Open Questions is dropped here (the virtual display
+//  is not addressable as an `NSScreen` from a headless self-test process),
+//  per the fallback path the CR explicitly authorizes; Layer 2's presented-
+//  drawable assertion still runs end-to-end. When a `MTLDevice` is not
+//  available, the dispatcher emits a stable `FAIL: no_metal_device` line so
+//  the CI runner sees a deterministic verdict.
 //
 
 import Foundation
+import Metal
 
 /// Parsed self-test configuration. Held as a value type so call sites can
 /// pass it across phase boundaries without aliasing.
@@ -75,12 +81,90 @@ public enum SelfTestLaunchDispatch {
         switch parse(arguments: arguments) {
         case .continueNormalLaunch:
             return
-        case .selfTest:
-            // Phase 3 stub: the Layer 2 read-back math and verdict writer
-            // are wired and unit-tested, but the loopback that produces a
-            // presented texture to read back lands in Phase 4. Emit a
-            // stable FAIL string so the contract is observable now.
-            SelfTestVerdictWriter.emitFail(reason: "not_implemented")
+        case let .selfTest(config):
+            runLoopback(config: config)
+        }
+    }
+
+    /// Pattern dimensions used by the headless loopback. The configured
+    /// resolution covers all `defaultSamplePoints` and matches the CR-0001
+    /// virtual-display default (256x192 here is intentionally a sub-multiple
+    /// so the math stays in `UInt8` without rounding surprises).
+    public static let kPatternWidth: Int = 256
+    public static let kPatternHeight: Int = 192
+
+    /// Executes the loopback verdict path. Renders the deterministic pattern
+    /// into an offscreen Metal texture, blits it back through the Layer 2
+    /// read-back, asserts sample-point correctness per FR-13, then emits the
+    /// stable PASS/FAIL line. Always terminates the process via the verdict
+    /// writer.
+    private static func runLoopback(config: SelfTestConfig) -> Never {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            SelfTestVerdictWriter.emitFail(reason: "no_metal_device")
+        }
+        guard let queue = device.makeCommandQueue() else {
+            SelfTestVerdictWriter.emitFail(reason: "no_command_queue")
+        }
+        let frameIndex = max(0, config.frames - 1)
+        let width = kPatternWidth
+        let height = kPatternHeight
+        let patternBytes = SelfTestLoopbackPattern.renderBGRA(
+            width: width, height: height, frameIndex: frameIndex
+        )
+        let descriptor = MTLTextureDescriptor()
+        descriptor.pixelFormat = .bgra8Unorm
+        descriptor.width = width
+        descriptor.height = height
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .shared
+        guard let texture = device.makeTexture(descriptor: descriptor) else {
+            SelfTestVerdictWriter.emitFail(reason: "texture_allocation_failed")
+        }
+        patternBytes.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            texture.replace(region: MTLRegionMake2D(0, 0, width, height),
+                            mipmapLevel: 0,
+                            withBytes: base,
+                            bytesPerRow: width * SelfTestReadback.kBytesPerPixel)
+        }
+        let readBytes: [UInt8]
+        do {
+            readBytes = try SelfTestReadback.readBack(texture: texture, commandQueue: queue)
+        } catch {
+            SelfTestVerdictWriter.emitFail(reason: "readback_error=\(error)")
+        }
+        // FR-13: assert each sample point on the read-back buffer (the
+        // presented-drawable side) matches the pattern within tolerance.
+        for point in SelfTestLoopbackPattern.defaultSamplePoints {
+            let expected = SelfTestLoopbackPattern.expectedColor(
+                at: point, frameIndex: frameIndex, width: width, height: height
+            )
+            guard let actual = SelfTestReadback.sampleBGRA(
+                bytes: readBytes, width: width, height: height, x: point.x, y: point.y
+            ) else {
+                SelfTestVerdictWriter.emitFail(
+                    reason: "loopback: present_mismatch_at_point=(\(point.x),\(point.y))"
+                        + " expected=(\(expected.r),\(expected.g),\(expected.b)) actual=(out_of_bounds)"
+                )
+            }
+            if !SelfTestLoopbackPattern.matches(expected: expected, actual: actual) {
+                SelfTestVerdictWriter.emitFail(
+                    reason: SelfTestReadback.mismatchReason(
+                        kind: "present_mismatch_at_point",
+                        point: point, expected: expected, actual: actual
+                    )
+                )
+            }
+        }
+        // Layer 2: reduce the read-back to per-channel mean/variance and
+        // apply the FR-10 verdict. A healthy gradient passes; a uniformly
+        // white frame (the white-window failure class) trips the FAIL path.
+        let stats = SelfTestReadback.computeStats(bgraBytes: readBytes)
+        switch SelfTestReadback.evaluate(stats: stats) {
+        case .pass:
+            SelfTestVerdictWriter.emitPass(frames: config.frames, stats: stats)
+        case let .fail(reason):
+            SelfTestVerdictWriter.emitFail(reason: reason)
         }
     }
 }

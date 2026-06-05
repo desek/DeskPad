@@ -188,4 +188,33 @@ public enum SelfTestReadback {
     public static func format3(_ a: Double, _ b: Double, _ c: Double) -> String {
         return String(format: "%.4f,%.4f,%.4f", a, b, c)
     }
+
+    /// Sample a single BGRA pixel out of a row-major byte buffer at `(x, y)`.
+    /// Returns the pixel as an RGB triple in the order the loopback pattern
+    /// emits (R first), so comparisons against `SelfTestLoopbackPattern`
+    /// expectations are direct. Returns `nil` if the buffer is too small for
+    /// the requested coordinate (defensive against a resolution mismatch
+    /// between the captured surface and the configured sample point).
+    public static func sampleBGRA(bytes: [UInt8],
+                                  width: Int, height: Int,
+                                  x: Int, y: Int) -> SelfTestColor?
+    {
+        if x < 0 || y < 0 || x >= width || y >= height { return nil }
+        let i = (y * width + x) * kBytesPerPixel
+        if i + 3 >= bytes.count { return nil }
+        return SelfTestColor(r: bytes[i + 2], g: bytes[i + 1], b: bytes[i])
+    }
+
+    /// FR-13 mismatch-reason builder. Produces the stable, parseable string
+    /// the script and CI runners match on. `kind` is either
+    /// `"capture_mismatch_at_point"` or `"present_mismatch_at_point"`.
+    public static func mismatchReason(kind: String,
+                                      point: SelfTestSamplePoint,
+                                      expected: SelfTestColor,
+                                      actual: SelfTestColor) -> String
+    {
+        return "loopback: \(kind)=(\(point.x),\(point.y))"
+            + " expected=(\(expected.r),\(expected.g),\(expected.b))"
+            + " actual=(\(actual.r),\(actual.g),\(actual.b))"
+    }
 }
