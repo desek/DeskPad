@@ -18,28 +18,75 @@ source-commit: 41ad155
 
 ## Baseline Assumption
 
-This CR is written against the assumption that **CR-0001
-(`docs/cr/CR-0001-gpu-rendering-pipeline.md`) has been implemented exactly per
-its proposed specification** on a macOS 15.0 / Swift 6 strict concurrency
+This CR is written against the **implemented** state of CR-0001 and CR-0003
+on the `cr/gpu-rendering` branch: macOS 15.0 / Swift 6 strict concurrency
 (`SWIFT_STRICT_CONCURRENCY = complete`) / Metal 3 baseline with no legacy
-`CGDisplayStream` path and no feature flag: the `CGDisplayStream` path is
-gone, capture runs on a dedicated background queue via `SCStream` against an
-`SCContentFilter` built from the virtual display's `CGDirectDisplayID`, the
-capture pipeline is an `actor`-isolated subsystem, the `SCStreamOutput`
-publishes `IOSurface`-backed `CMSampleBuffer`s, a `CAMetalLayer`-hosted
-`@MainActor` renderer presents them via a `CADisplayLink` obtained from
-`NSView/NSWindow/NSScreen.displayLink(target:selector:)` with dirty-frame
-gating, adaptive latency-versus-power mode switching is in place, and
-structured logging is teed to `~/Library/Logs/DeskPad/deskpad.log` with
-`filename:line` tagging. CR-0002 builds on that architecture and does not
-re-specify any of it. Where this CR refers to "the capture subsystem", "the
-render subsystem", "the coordinator", "the structured logger", or "the
-adaptive mode controller", those are the artefacts CR-0001 delivers. The
-deployment target (`MACOSX_DEPLOYMENT_TARGET = 15.0`), `SWIFT_VERSION = 6.0`,
-and `SWIFT_STRICT_CONCURRENCY = complete` settings established by CR-0001
-are inherited unchanged by this CR; no `@available(macOS 14, *)` guards are
-needed for the AVFoundation symbols this CR uses, even though they are
-documented as macOS 14+ availability.
+`CGDisplayStream` path. Concretely:
+
+* Capture runs on a dedicated background queue via `SCStream` against an
+  `SCContentFilter` built from the virtual display's `CGDirectDisplayID`.
+  The capture pipeline is split between an `actor`-isolated
+  `StreamCoordinator` (`DeskPad/Backend/Capture/capture.stream_coordinator.swift`)
+  and an `@MainActor`-isolated `StreamOutput`
+  (`DeskPad/Backend/Capture/capture.stream_output.swift`).
+* `StreamOutput.stream(_:didOutputSampleBuffer:of:)` receives
+  `IOSurface`-backed `CMSampleBuffer`s on the background queue, unwraps the
+  `IOSurface` via `CMSampleBufferGetImageBuffer` plus
+  `CVPixelBufferGetIOSurface`, and publishes the surface (wrapped in a
+  `CapturedSurface` value type alongside its ingest timestamp) atomically
+  for the renderer. The `CMSampleBuffer` itself is **not** currently
+  published to the renderer; widening that hand-off to `CMSampleBuffer` is
+  in scope for this CR (see Functional Requirement 2).
+* Presentation is driven by `CAMetalDisplayLink` (macOS 14+, attached to
+  the host view's `CAMetalLayer`) implemented in
+  `DeskPad/Backend/Render/render.display_link_pacer.swift`. There is no
+  `CADisplayLink(target:selector:)` and no `CVDisplayLink` anywhere in the
+  tree. The pacer vends a `CAMetalDrawable` and target presentation
+  timestamp per tick.
+* The render ensemble is a set of single-purpose files:
+  `Backend/Render/render.frame_presenter.swift` (per-tick render closure,
+  the actual driver invoked by the pacer),
+  `Backend/Render/render.iosurface_texture_cache.swift`,
+  `Backend/Render/render.blit_pipeline.swift`,
+  `Backend/Render/render.device_loss_recovery.swift`,
+  `Backend/Render/render.present_stall_watchdog.swift` (CR-0003 Layer 1),
+  and the host view at
+  `Frontend/Screen/render.metal_layer_host_view.swift` (note: in
+  `Frontend/Screen/`, not `Backend/Render/`, because it is an `NSView`).
+* Adaptive latency-versus-power mode switching is implemented inline on
+  the `@MainActor` coordinator
+  (`DeskPad/Frontend/Screen/screen.capture_render_coordinator.swift`,
+  method `evaluateAdaptiveMode(switchThresholdSeconds:)`, state
+  `currentMode: CaptureMode`). The `CaptureMode` enum (`.lowLatency` /
+  `.powerSaving`) is defined in
+  `DeskPad/Backend/Capture/capture.stream_configuration.swift`. There is
+  no separate `AdaptiveModeController` type or file.
+* Structured logging is teed to `~/Library/Logs/DeskPad/deskpad.log` with
+  `filename:line` tagging via `DeskPad/Logging/agents.log.logger.swift`
+  and `DeskPad/Logging/agents.log.file_sink.swift`.
+* The CR-0003 present-stall watchdog samples
+  `(ingestedFrameCount, presentedFrameCount, state)` from the coordinator
+  once per second and emits the literal `present stall: ingested=N
+  presented=M elapsed=S` prefix to the log when ingestion advances but
+  presentation does not for three seconds. The watchdog is always-on in
+  production and is the cheapest detection layer for the white-window
+  failure class.
+* The CR-0003 `--self-test` mode is parsed in `DeskPad/main.swift` via
+  `SelfTestLaunchDispatch.dispatchIfRequested()` and routes the binary
+  through a headless diagnostic instead of constructing the main window.
+  Layer 2 reads back from the presented `CAMetalDrawable`; Layer 3
+  renders a known RGB-gradient pattern offscreen.
+
+CR-0002 builds on that architecture and does not re-specify any of it.
+Where this CR refers to "the capture subsystem", "the render subsystem",
+"the coordinator", or "the structured logger", those are the artefacts
+named above. The "adaptive mode controller" referred to in this CR is the
+`evaluateAdaptiveMode` logic on the coordinator, not a separate object.
+The deployment target (`MACOSX_DEPLOYMENT_TARGET = 15.0`),
+`SWIFT_VERSION = 6.0`, and `SWIFT_STRICT_CONCURRENCY = complete` settings
+established by CR-0001 are inherited unchanged by this CR; no
+`@available(macOS 14, *)` guards are needed for the AVFoundation symbols
+this CR uses, even though they are documented as macOS 14+ availability.
 
 ## Change Summary
 
@@ -134,39 +181,51 @@ workload is power-bound, not latency-bound.
 
 ## Current State
 
-After CR-0001, the rendering pipeline is owned by
+After CR-0001 and CR-0003, the rendering pipeline is owned by
 `Frontend/Screen/screen.capture_render_coordinator.swift`, which constructs
-a `Backend/Capture/capture.stream_coordinator.swift` actor and a
-`Frontend/Screen/render.metal_layer_host_view.swift` view, wires them
-together through the `Backend/Render/` files (texture cache, blit pipeline,
-display-link pacer, device-loss recovery), and observes screen
+a `Backend/Capture/capture.stream_coordinator.swift` actor, a
+`Backend/Capture/capture.stream_output.swift` `@MainActor` output, a
+`Frontend/Screen/render.metal_layer_host_view.swift` view (note:
+`Frontend/Screen/`, not `Backend/Render/`, because it is an `NSView`), and
+the per-tick `Backend/Render/render.frame_presenter.swift`. The
+coordinator wires them together through the remaining `Backend/Render/`
+files (`render.iosurface_texture_cache.swift`,
+`render.blit_pipeline.swift`, `render.display_link_pacer.swift`,
+`render.device_loss_recovery.swift`,
+`render.present_stall_watchdog.swift`) and observes screen
 reconfiguration. The coordinator's hand-off from capture to render is an
-implicit contract: the capture output publishes an `IOSurface` reference, and
-the renderer reads it on each `CADisplayLink` tick if the dirty flag is set.
-There is no protocol-level seam between capture and render. The renderer is
-hard-coded to be the Metal blit pipeline.
+implicit contract: `StreamOutput.publish(surface:)` stores the latest
+`IOSurface` (wrapped in a `CapturedSurface` value type with an ingest
+timestamp) and signals dirty; `FramePresenter.present(tick:)` reads
+`streamOutput.latestCapturedSurface` on each `CAMetalDisplayLink` tick
+when the dirty flag is set. There is no protocol-level seam between
+capture and render. The renderer is hard-coded to be the Metal blit
+pipeline. Adaptive mode (`.lowLatency` vs `.powerSaving`) lives as
+`evaluateAdaptiveMode(switchThresholdSeconds:)` and `currentMode` on the
+coordinator; there is no separate adaptive-mode-controller file.
 
 ### Current State Diagram
 
 ```mermaid
 flowchart TD
     subgraph Capture["Capture (background queue, CR-0001)"]
-        SCS[SCStream] --> SCO[SCStreamOutput]
-        SCO --> SURF[IOSurface atomic publication]
+        SCS[SCStream] --> SCO[StreamOutput @MainActor]
+        SCO --> SURF[CapturedSurface = IOSurface plus ingest timestamp, atomic publication]
     end
 
     subgraph Render["Render (Metal-only, CR-0001)"]
-        DL[CADisplayLink ProMotion-aware] --> BLIT[Metal blit pipeline]
+        DL[CAMetalDisplayLink ProMotion-aware] --> FP[FramePresenter present tick]
         SURF --> TEX[IOSurface to MTLTexture cache]
-        TEX --> BLIT
-        BLIT --> CML[CAMetalLayer drawable present]
+        TEX --> FP
+        FP --> BLIT[BlitPipeline encode]
+        BLIT --> CML[CAMetalLayer drawable present via pacer-vended CAMetalDrawable]
     end
 
-    subgraph Control["Control (CR-0001)"]
-        COORD[CaptureRenderCoordinator] --> SCS
+    subgraph Control["Control (CR-0001, CR-0003)"]
+        COORD[CaptureRenderCoordinator with evaluateAdaptiveMode] --> SCS
         COORD --> DL
         COORD --> LOG[Structured logger filename:line]
-        ADAPT[Adaptive mode controller] --> COORD
+        COORD --> WD[PresentStallWatchdog samples ingested/presented]
     end
 ```
 
@@ -211,8 +270,9 @@ The protocol members:
   on shutdown and on backend switch.
 * `var hostView: NSView { get }`, the view the window's content view
   embeds. For the Metal backend this is the `MetalLayerHostView` from
-  CR-0001; for the `AVSampleBufferDisplayLayer` backend this is a thin
-  `NSView` whose backing layer is the `AVSampleBufferDisplayLayer`.
+  CR-0001 (`Frontend/Screen/render.metal_layer_host_view.swift`); for the
+  `AVSampleBufferDisplayLayer` backend this is a thin `NSView` whose
+  backing layer is the `AVSampleBufferDisplayLayer`.
 * `var diagnostics: PresentationBackendDiagnostics { get }`, a snapshot
   of backend-specific health (the AVSBDL backend's `status`, `error`,
   and `requiresFlushToResumeDecoding`; the Metal backend's last
@@ -221,16 +281,21 @@ The protocol members:
 The capture-to-backend interface is `CMSampleBuffer`, not raw `IOSurface`,
 because:
 
-1. The `SCStream` output already produces `CMSampleBuffer`s with the right
+1. The `SCStream` already delivers `CMSampleBuffer`s with the right
    `IOSurface`-backed `CVPixelBuffer` and the correct presentation
-   timestamp; passing the buffer through unchanged is zero-copy.
+   timestamp to `StreamOutput.stream(_:didOutputSampleBuffer:of:)`. Today
+   `StreamOutput` unwraps the `IOSurface` and discards the
+   `CMSampleBuffer`; this CR widens the publication to retain the
+   `CMSampleBuffer` so it can be passed through unchanged. The pixel data
+   stays zero-copy in unified memory across this widening.
 2. `AVSampleBufferVideoRenderer.enqueueSampleBuffer:` requires a
    `CMSampleBuffer`, so the AVSBDL backend would otherwise have to
    reconstruct one.
 3. The Metal backend's adapter unwraps the `CMSampleBuffer` to its
    underlying `IOSurface` via `CMSampleBufferGetImageBuffer` and
-   `CVPixelBufferGetIOSurface` exactly the way CR-0001's renderer already
-   does internally; the only change is where the unwrap happens.
+   `CVPixelBufferGetIOSurface` exactly the way `StreamOutput` does
+   today; the only change is that the unwrap moves from `StreamOutput`
+   into the Metal adapter so the AVSBDL adapter never has to see it.
 
 ### AVSampleBufferDisplayLayer Backend
 
@@ -304,14 +369,19 @@ Key design points:
 
 5. **Adaptive mode interaction.** CR-0001 requirement 18 specifies
    automatic adaptive mode switching between low-latency and power-saving
-   operating points. The `AVSampleBufferDisplayLayer` backend is, by its
-   own structural characteristics, the power-optimized choice; latency mode
-   does not meaningfully apply to it because the layer's internal buffering
-   is not under app control. When the AVSBDL backend is selected, the
-   adaptive mode controller **MUST** be informed that latency-mode requests
-   are no-ops for this backend, and the backend's `diagnostics` snapshot
-   **MUST** report this. Users who need the low-latency mode must use the
-   Metal backend, and the menu item makes this trade-off explicit.
+   operating points, implemented as `evaluateAdaptiveMode(...)` plus
+   `currentMode` state on the coordinator (no separate controller file).
+   The `AVSampleBufferDisplayLayer` backend is, by its own structural
+   characteristics, the power-optimized choice; latency mode does not
+   meaningfully apply to it because the layer's internal buffering is not
+   under app control. When the AVSBDL backend is selected, the
+   coordinator's adaptive mode logic **MUST** treat
+   `CaptureMode.lowLatency` requests as no-ops for the *presentation*
+   stage (the capture configuration may still update for queue depth /
+   `minimumFrameInterval`), and the backend's `diagnostics` snapshot
+   **MUST** report `latencyModeApplicable = false`. Users who need the
+   low-latency presentation mode must use the Metal backend, and the menu
+   item makes this trade-off explicit.
 
 6. **Readiness gating.** The backend checks
    `sampleBufferRenderer.readyForMoreMediaData`
@@ -320,6 +390,31 @@ Key design points:
    queueing it, consistent with the newest-frame-wins policy CR-0001
    established for the capture path. The drop is counted and logged at a
    rate-limited cadence to avoid log spam.
+
+7. **CR-0003 present-stall watchdog contract.** The watchdog samples
+   `(ingestedFrameCount, presentedFrameCount, state)` from the
+   coordinator on a one-second main-actor cadence and emits the literal
+   prefix `present stall: ingested=N presented=M elapsed=S` after three
+   seconds of ingestion-without-presentation. The AVSBDL backend **MUST**
+   increment a `presentedFrameCount` counter exposed to the coordinator
+   on every successful `enqueueSampleBuffer(_:)` call (i.e. every
+   readiness-gated, non-dropped enqueue), with the same observable
+   semantics as the Metal backend's `FramePresenter.presentedFrameCount`.
+   Without this contract the watchdog would emit false positives whenever
+   the AVSBDL backend is active. The Metal backend keeps incrementing the
+   existing `FramePresenter.framesPresented`.
+
+8. **CR-0003 `--self-test` mode interaction.** The CR-0003 self-test
+   diagnostics in `Frontend/Screen/SelfTest/` read back pixels from a
+   `CAMetalDrawable` presented to a `CAMetalLayer`. The
+   `AVSampleBufferDisplayLayer` backend has no app-addressable
+   drawable, so Layer 2 (drawable read-back) and Layer 3 (loopback
+   pattern) do not apply to it. The self-test launch path **MUST**
+   force-select the Metal backend for the duration of the `--self-test`
+   run regardless of the user's persisted preference or the
+   `-DeskPadPresentationBackend` launch argument, and **MUST** log this
+   override. The persisted user preference is not modified by the
+   self-test run.
 
 ### Configuration / Toggle Mechanism
 
@@ -371,11 +466,12 @@ flowchart TD
     end
 
     subgraph Control["Control"]
-        COORD[CaptureRenderCoordinator] --> SEL
+        COORD[CaptureRenderCoordinator with evaluateAdaptiveMode] --> SEL
         TOGGLE[Menu item / UserDefaults / launch arg] --> COORD
-        ADAPT[Adaptive mode controller from CR-0001] -. latency-mode no-op for avsbdl .-> AB
-        ADAPT --> MB
+        COORD -. lowLatency request no-op on avsbdl presentation .-> AB
+        COORD --> MB
         LOG[Structured logger filename:line] --> COORD
+        WD[PresentStallWatchdog CR-0003] -. samples ingested+presented .- COORD
     end
 ```
 
@@ -489,17 +585,26 @@ flowchart TD
     logger.
 
 14. The `AVSampleBufferDisplayLayer` backend **MUST** declare itself the
-    power-optimized backend to the adaptive mode controller from CR-0001.
-    The adaptive mode controller's latency-mode requests **MUST** be no-ops
-    when the AVSBDL backend is active, and this state **MUST** be reported
-    through the backend's `diagnostics` snapshot and **MUST** be logged on
-    every mode-request that becomes a no-op.
+    power-optimized backend by setting
+    `diagnostics.latencyModeApplicable = false`. The coordinator's
+    `evaluateAdaptiveMode(...)` and the resulting `currentMode`
+    transitions (CR-0001 FR-18) **MUST** continue to run, but a transition
+    to `CaptureMode.lowLatency` **MUST NOT** alter the AVSBDL backend's
+    presentation behaviour (which is structurally not under app control).
+    The no-op for presentation **MUST** be reported through the backend's
+    `diagnostics` snapshot and **MUST** be logged at most once per mode
+    transition burst. Capture-side effects of mode transitions (queue
+    depth, `minimumFrameInterval`) **MAY** continue to apply because they
+    affect what the capture subsystem produces, not what the AVSBDL
+    backend does with it.
 
 15. The Metal backend's behaviour as specified by CR-0001 **MUST NOT** be
     changed by this CR except to conform to the new `PresentationBackend`
-    protocol. CR-0001's requirements 1 through 18 and acceptance criteria
-    AC-1 through AC-17 **MUST** continue to hold whenever the Metal
-    backend is selected.
+    protocol. CR-0001's functional requirements 1 through 18 and
+    acceptance criteria AC-1 through AC-17 **MUST** continue to hold
+    whenever the Metal backend is selected. CR-0003's functional
+    requirements (present-stall watchdog and `--self-test` mode) **MUST**
+    continue to hold whenever the Metal backend is selected.
 
 16. The system **MUST** log every backend selection, every backend switch,
     every reconfiguration, every status transition observed on either
@@ -515,6 +620,27 @@ flowchart TD
     minimum input lag does not. The documentation **MUST** state that
     selecting the AVSBDL backend disables CR-0001's low-latency adaptive
     mode for that backend.
+
+18. The `AVSampleBufferDisplayLayer` backend **MUST** increment a
+    `presentedFrameCount: Int` counter on every successful
+    `sampleBufferRenderer.enqueueSampleBuffer(_:)` call (readiness-gated,
+    non-dropped). The counter **MUST** be observable from the coordinator
+    in the same manner as `FramePresenter.presentedFrameCount`, so the
+    CR-0003 `PresentStallWatchdog` continues to read a meaningful
+    `presented` value for either active backend without modification.
+    Dropped frames (per Functional Requirement 13) **MUST NOT** be
+    counted as presented.
+
+19. The CR-0003 `--self-test` launch path
+    (`SelfTestLaunchDispatch.dispatchIfRequested()` in
+    `DeskPad/main.swift`) **MUST** force-select the Metal backend for the
+    duration of the self-test run regardless of the persisted
+    `DeskPad.presentationBackend` value or the
+    `-DeskPadPresentationBackend` launch argument, because the AVSBDL
+    backend has no app-addressable drawable for CR-0003 Layer 2
+    (drawable read-back) or Layer 3 (loopback pattern). The override
+    **MUST** be logged with `filename:line` and **MUST NOT** modify the
+    persisted user preference.
 
 ### Non-Functional Requirements
 
@@ -552,18 +678,25 @@ flowchart TD
 ## Affected Components
 
 * `DeskPad/Frontend/Screen/screen.capture_render_coordinator.swift`
-  (from CR-0001; modified to own a `PresentationBackend` existential and
-  to handle live switching)
+  (from CR-0001 / CR-0003; modified to own a `PresentationBackend`
+  existential, to handle live switching, to consult the active backend's
+  `diagnostics.latencyModeApplicable` inside `evaluateAdaptiveMode`, and
+  to expose a backend-agnostic `presentedFrameCount` to the
+  `PresentStallWatchdog`)
 * `DeskPad/Backend/Render/render.presentation_backend.swift` (new; the
   protocol)
 * `DeskPad/Backend/Render/render.presentation_backend_diagnostics.swift`
   (new; the diagnostics value type)
 * `DeskPad/Backend/Render/render.metal_backend.swift` (new; a thin adapter
-  that conforms the CR-0001 Metal renderer to `PresentationBackend`)
+  that conforms the CR-0001 `FramePresenter` + `MetalLayerHostView` +
+  `IOSurfaceTextureCache` + `BlitPipeline` + `DisplayLinkPacer`
+  ensemble to `PresentationBackend`)
 * `DeskPad/Backend/Render/render.avsbdl_backend.swift` (new; the
   `AVSampleBufferDisplayLayer` backend)
-* `DeskPad/Backend/Render/render.avsbdl_host_view.swift` (new; an `NSView`
-  whose backing layer is an `AVSampleBufferDisplayLayer`)
+* `DeskPad/Frontend/Screen/render.avsbdl_host_view.swift` (new; an
+  `NSView` whose backing layer is an `AVSampleBufferDisplayLayer`,
+  located alongside `render.metal_layer_host_view.swift` for symmetry
+  since both are `NSView` subclasses)
 * `DeskPad/Backend/Render/render.avsbdl_display_immediately_attachment.swift`
   (new; the helper that sets `kCMSampleAttachmentKey_DisplayImmediately`
   on a `CMSampleBuffer`)
@@ -575,14 +708,16 @@ flowchart TD
   before any view is built)
 * `DeskPad/Frontend/Menu/menu.presentation_backend_submenu.swift` (new;
   builds the radio-style submenu and posts the typed switch event)
-* `DeskPad/AppDelegate.swift` (modified to call the menu builder and the
-  user-defaults bootstrap; no other behavioural change)
-* `DeskPad/Backend/Render/render.adaptive_mode_controller.swift` (from
-  CR-0001; modified to consult the active backend's `diagnostics` and
-  no-op latency-mode requests when the AVSBDL backend is active)
+* `DeskPad/AppDelegate.swift` (modified to install the new submenu
+  alongside the existing main menu construction at lines 26 to 37 and to
+  call the user-defaults bootstrap; no other behavioural change)
+* `DeskPad/main.swift` (modified so the self-test launch path force-selects
+  the Metal backend before `SelfTestLaunchDispatch.dispatchIfRequested()`
+  per Functional Requirement 19)
 * `DeskPad/Backend/Capture/capture.stream_output.swift` (from CR-0001;
-  modified so its hand-off is a `CMSampleBuffer`, not just an `IOSurface`;
-  the underlying frame data is unchanged)
+  modified so its hand-off retains the `CMSampleBuffer` for the
+  coordinator; the underlying frame data and `IOSurface` unwrap point
+  change but the pixel data stays zero-copy)
 * `README.md` (modified to document the new menu, key, launch argument,
   and the trade-off)
 * `.taxonomy` (modified to add `PresentationBackend`,
@@ -698,19 +833,30 @@ reach it through the protocol.
    with the diagnostics value type (backend identifier string, last error
    description optional, `latencyModeApplicable: Bool`, drop count rolling
    window).
-3. Add `Backend/Render/render.metal_backend.swift`: a struct or final
-   class wrapping the CR-0001 Metal renderer and conforming to
-   `PresentationBackend`. `enqueue(_:)` unwraps the `CMSampleBuffer` to
-   its underlying `IOSurface` via `CMSampleBufferGetImageBuffer` plus
-   `CVPixelBufferGetIOSurface` (verified at
-   `CoreVideo/CVPixelBufferIOSurface.h:62`) and forwards exactly as
-   CR-0001 already does internally.
+3. Add `Backend/Render/render.metal_backend.swift`: a `final class`
+   wrapping the CR-0001 ensemble (`FramePresenter`, `MetalLayerHostView`,
+   `IOSurfaceTextureCache`, `BlitPipeline`, `DisplayLinkPacer`) and
+   conforming to `PresentationBackend`. `enqueue(_:)` unwraps the
+   `CMSampleBuffer` to its underlying `IOSurface` via
+   `CMSampleBufferGetImageBuffer` plus `CVPixelBufferGetIOSurface`
+   (verified at `CoreVideo/CVPixelBufferIOSurface.h:62`) and feeds it to
+   the existing `StreamOutput.publish(surface:)` path so `FramePresenter`
+   continues to read it on each `CAMetalDisplayLink` tick. The Metal
+   adapter exposes `FramePresenter.presentedFrameCount` as its
+   `presentedFrameCount` for the watchdog.
 4. Modify `Frontend/Screen/screen.capture_render_coordinator.swift` to
    hold a `PresentationBackend` existential, with `MetalBackend` as the
-   only possible concrete type for now.
-5. Modify `Backend/Capture/capture.stream_output.swift` so its hand-off
-   to the coordinator is the `CMSampleBuffer` directly, not the unwrapped
-   `IOSurface`. The buffer is the same buffer; only the interface widens.
+   only possible concrete type for now. The coordinator's existing
+   `presentedFrameCount` accessor (already consumed by the
+   `PresentStallWatchdog`) **MUST** read from
+   `currentBackend.presentedFrameCount` so the watchdog continues to
+   sample a meaningful value when the backend changes.
+5. Modify `Backend/Capture/capture.stream_output.swift` so its
+   publication retains the source `CMSampleBuffer` alongside the
+   `IOSurface` (the existing `CapturedSurface` value type widens to also
+   carry the `CMSampleBuffer`), and so the coordinator can forward the
+   `CMSampleBuffer` to the active backend. The pixel data stays
+   zero-copy; only the interface widens.
 
 **Affected components:** new files under `DeskPad/Backend/Render/`;
 modified `Frontend/Screen/screen.capture_render_coordinator.swift` and
@@ -721,8 +867,10 @@ modified `Frontend/Screen/screen.capture_render_coordinator.swift` and
 Add the second backend behind a not-yet-wired entry point. The toggle does
 not exist yet; tests reach the new backend through a test-only constructor.
 
-1. Add `Backend/Render/render.avsbdl_host_view.swift`: an `NSView`
-   subclass whose `makeBackingLayer` returns an
+1. Add `Frontend/Screen/render.avsbdl_host_view.swift` (placed alongside
+   `render.metal_layer_host_view.swift` for symmetry; both are
+   `NSView` subclasses and views belong under `Frontend/Screen/`): an
+   `NSView` subclass whose `makeBackingLayer` returns an
    `AVSampleBufferDisplayLayer`, with `videoGravity` set to
    `AVLayerVideoGravityResize` (per `AVAnimation.h:48`,
    `API_AVAILABLE(macos(10.7))`), so the captured content fills the host
@@ -740,11 +888,12 @@ not exist yet; tests reach the new backend through a test-only constructor.
    `hostView.layer as! AVSampleBufferDisplayLayer`, reads its
    `sampleBufferRenderer` (declared at
    `AVSampleBufferDisplayLayer.h:303`, macOS 14+), and exposes
-   `configure`, `enqueue`, `teardown`, `hostView`, `diagnostics`.
-   `enqueue(_:)` checks `readyForMoreMediaData`, applies the
-   display-immediately attachment, and calls
-   `sampleBufferRenderer.enqueueSampleBuffer(_:)`. KVO-observes
-   `sampleBufferRenderer.status`; subscribes to
+   `configure`, `enqueue`, `teardown`, `hostView`, `diagnostics`, and
+   `presentedFrameCount`. `enqueue(_:)` checks `readyForMoreMediaData`,
+   applies the display-immediately attachment, calls
+   `sampleBufferRenderer.enqueueSampleBuffer(_:)`, and on success
+   increments `presentedFrameCount` (per Functional Requirement 18).
+   KVO-observes `sampleBufferRenderer.status`; subscribes to
    `AVSampleBufferVideoRendererDidFailToDecodeNotification` and
    `AVSampleBufferVideoRendererRequiresFlushToResumeDecodingDidChangeNotification`;
    logs every transition.
@@ -786,15 +935,22 @@ from the menu and via the launch argument.
    call `configure(displaySize:scaleFactor:)`), and log the swap with the
    elapsed time.
 6. Modify
-   `Backend/Render/render.adaptive_mode_controller.swift` from CR-0001
-   so latency-mode requests consult the active backend's
-   `diagnostics.latencyModeApplicable` and are no-ops when it is `false`.
-   The no-op **MUST** be logged at most once per mode-request burst.
+   `Frontend/Screen/screen.capture_render_coordinator.swift`'s
+   `evaluateAdaptiveMode(...)` (the actual location of CR-0001's
+   adaptive-mode logic; there is no separate controller file) so that a
+   transition to `CaptureMode.lowLatency` consults the active backend's
+   `diagnostics.latencyModeApplicable` and skips the
+   presentation-side effects when it is `false` (capture-side
+   `minimumFrameInterval` and queue depth **MAY** still update). The
+   no-op **MUST** be logged at most once per mode-transition burst.
+7. Modify `DeskPad/main.swift` so the self-test launch path force-selects
+   the Metal backend before `SelfTestLaunchDispatch.dispatchIfRequested()`
+   reads any backend preference. Log the override with `filename:line`.
+   Do not modify the persisted `UserDefaults` value.
 
 **Affected components:** new files under `DeskPad/Backend/Configuration/`
 and `DeskPad/Frontend/Menu/`; modified `AppDelegate.swift`,
-`Frontend/Screen/screen.capture_render_coordinator.swift`,
-`Backend/Render/render.adaptive_mode_controller.swift`.
+`main.swift`, `Frontend/Screen/screen.capture_render_coordinator.swift`.
 
 ### Phase 4: Documentation, Taxonomy, and Test Bring-up
 
@@ -806,9 +962,11 @@ After Phase 3 is verified manually on a release-candidate build:
 2. Update `.taxonomy` with entries for `PresentationBackend`,
    `MetalBackend`, `AVSBDLBackend`, `PresentationBackendDiagnostics`.
 3. Verify that
-   `grep -rn 'AVSampleBufferDisplayLayer.*enqueueSampleBuffer\|AVSampleBufferDisplayLayer.*\.flush\b\|AVSampleBufferDisplayLayer.*\.status\b' DeskPad/`
+   `grep -rnE 'AVSampleBufferDisplayLayer[^.]*\.(enqueueSampleBuffer|flush|flushAndRemoveImage|status|error|timebase|readyForMoreMediaData|requiresFlushToResumeDecoding)\b' DeskPad/`
    returns no matches (the modern `sampleBufferRenderer` path is the only
-   one used).
+   one used). This is the same expression used in the Quality Standards
+   Compliance / Verification Commands section, so the build and the
+   automated test guard share one regex.
 4. Verify all new files carry `@agents-index` and stay under 200 lines.
 
 **Affected components:** `README.md`, `.taxonomy`, project-wide grep
@@ -853,7 +1011,7 @@ new target bring-up is required.
 |-----------|-----------|-------------|--------|-----------------|
 | `DeskPadTests/Render/presentation_backend_protocol_tests.swift` | `testCoordinatorHandsOffCMSampleBuffer` | Verifies that the coordinator's hand-off to the active backend is a `CMSampleBuffer`, not a raw `IOSurface`, and that the buffer is forwarded unchanged. | A fake backend recording every `enqueue(_:)` invocation; a synthesized `CMSampleBuffer` published by a fake `SCStreamOutput`. | One `enqueue` call observed; recorded `CMSampleBuffer` is pointer-identical to the input. |
 | `DeskPadTests/Render/metal_backend_adapter_tests.swift` | `testMetalAdapterUnwrapsIOSurface` | Verifies the Metal adapter unwraps `CMSampleBuffer` to its `IOSurface` via `CMSampleBufferGetImageBuffer` + `CVPixelBufferGetIOSurface` and forwards to the CR-0001 renderer unchanged. | A synthesized `IOSurface`-backed `CMSampleBuffer`. | Downstream renderer receives the same `IOSurfaceID`. |
-| `DeskPadTests/Render/avsbdl_host_view_tests.swift` | `testHostViewBackingLayerIsAVSampleBufferDisplayLayer` | Verifies the AVSBDL host view's backing layer is an `AVSampleBufferDisplayLayer`. | A constructed host view. | `view.layer is AVSampleBufferDisplayLayer` is `true`. |
+| `DeskPadTests/Frontend/avsbdl_host_view_tests.swift` | `testHostViewBackingLayerIsAVSampleBufferDisplayLayer` | Verifies the AVSBDL host view's backing layer is an `AVSampleBufferDisplayLayer`. (Test lives under `DeskPadTests/Frontend/` to mirror the source location `DeskPad/Frontend/Screen/render.avsbdl_host_view.swift`.) | A constructed host view. | `view.layer is AVSampleBufferDisplayLayer` is `true`. |
 | `DeskPadTests/Render/avsbdl_display_immediately_tests.swift` | `testDisplayImmediatelyAttachmentApplied` | Verifies the helper sets `kCMSampleAttachmentKey_DisplayImmediately = kCFBooleanTrue` on the first attachments dictionary. | A synthesized `CMSampleBuffer`. | `CMSampleBufferGetSampleAttachmentsArray(_, false)` returns an array whose first dictionary contains the key set to `kCFBooleanTrue`. |
 | `DeskPadTests/Render/avsbdl_backend_enqueue_tests.swift` | `testEnqueueGoesThroughSampleBufferRenderer` | Verifies the backend enqueues through `sampleBufferRenderer.enqueueSampleBuffer(_:)` and never through the deprecated `AVSampleBufferDisplayLayer.enqueueSampleBuffer(_:)`. | A spy `AVSampleBufferDisplayLayer` whose `sampleBufferRenderer` is observable; one captured `CMSampleBuffer`. | One enqueue observed on the renderer; zero direct enqueues on the layer. |
 | `DeskPadTests/Render/avsbdl_backend_readiness_tests.swift` | `testDropsFrameWhenNotReadyForMoreMediaData` | Verifies the backend drops the incoming `CMSampleBuffer` when `sampleBufferRenderer.readyForMoreMediaData` is `false`, and counts the drop. | A stub renderer reporting `readyForMoreMediaData = false`; ten enqueues. | Zero enqueues forwarded; drop counter equals 10; one rate-limited log line emitted. |
@@ -870,6 +1028,9 @@ new target bring-up is required.
 | `DeskPadTests/Performance/live_switch_latency_tests.swift` | `testLiveSwitchUnder250ms` (Instruments-backed manual benchmark) | Measures the elapsed time from the menu click to the first enqueue on the new backend. | An active Metal session at 4K; menu-driven switch to AVSBDL. | Logged swap time below 250 ms. |
 | `DeskPadTests/Compliance/no_deprecated_avsbdl_api_tests.swift` | `testNoDirectDeprecatedAVSBDLAPIs` | Source-grep guard: verifies no file under `DeskPad/Backend/Render/` references the deprecated `AVSampleBufferDisplayLayer.enqueueSampleBuffer`, `.flush`, `.flushAndRemoveImage`, `.status`, `.error`, `.timebase`, `.readyForMoreMediaData`, or `.requiresFlushToResumeDecoding` directly on the layer (only `sampleBufferRenderer.*` is permitted). | Source tree under `DeskPad/`. | Grep returns no matches. |
 | `DeskPadTests/Compliance/no_em_dash_tests.swift` (existing CR-0001 test extended) | `testNewFilesContainNoEmDashes` | Source-grep guard extended to cover the new files. | Source tree under `DeskPad/`. | Grep for U+2014 and U+2013 returns no matches in any file introduced by CR-0002. |
+| `DeskPadTests/Render/avsbdl_backend_presented_count_tests.swift` | `testPresentedFrameCountIncrementsOnSuccessfulEnqueue` | Verifies the AVSBDL backend's `presentedFrameCount` increments by exactly one on each successful enqueue and does not increment when `readyForMoreMediaData` is `false`. | A spy renderer; ten enqueues, five with `readyForMoreMediaData = true` and five with `false`. | `presentedFrameCount` equals 5; drop counter equals 5. |
+| `DeskPadTests/Integration/present_stall_watchdog_backend_agnostic_tests.swift` | `testWatchdogReadsPresentedCountFromActiveBackend` | Verifies the CR-0003 `PresentStallWatchdog` continues to read a meaningful `presentedFrameCount` after a live switch from Metal to AVSBDL, and that no false-positive stall warning is emitted when the AVSBDL backend is enqueueing normally. | Coordinator with a fake AVSBDL backend that increments its presented counter; simulated ingestion advancing in lockstep. | Watchdog samples a non-zero `presented` value on every tick post-switch; zero `present stall: ingested=` lines in the log. |
+| `DeskPadTests/SelfTest/selftest_forces_metal_backend_tests.swift` | `testSelfTestForcesMetalBackendRegardlessOfPreference` | Verifies that with `UserDefaults` set to `"avsbdl"` and the `--self-test` argument present, the self-test launch path resolves the Metal backend, emits a log line noting the override, and does not modify the persisted `UserDefaults` value. | `UserDefaults` set to `"avsbdl"`; argv contains `--self-test`. | Resolved backend is `"metal"`; one override log line emitted; `UserDefaults` value remains `"avsbdl"` after the run. |
 
 ### Tests to Modify
 
@@ -1061,6 +1222,26 @@ When the file is inspected
 Then the file contains zero U+2014 EM DASH characters and zero U+2013 EN DASH characters used as dashes
 ```
 
+### AC-20: AVSBDL backend feeds the CR-0003 present-stall watchdog
+
+```gherkin
+Given the AVSBDL backend is the active backend
+When sampleBufferRenderer.enqueueSampleBuffer succeeds for a captured CMSampleBuffer
+Then the backend's presentedFrameCount property is incremented by exactly one
+  And the coordinator's presentedFrameCount accessor (read by the CR-0003 PresentStallWatchdog) reflects the increment on its next sample
+  And no "present stall: ingested=" line is emitted while ingestion and successful enqueues advance in lockstep
+```
+
+### AC-21: Self-test mode forces the Metal backend
+
+```gherkin
+Given UserDefaults at key "DeskPad.presentationBackend" is "avsbdl"
+When DeskPad is launched with the argument "--self-test"
+Then the resolved active backend for the self-test run is "metal"
+  And a structured log line is emitted noting the self-test override of the backend preference, with filename:line
+  And after the self-test exits, the UserDefaults value at "DeskPad.presentationBackend" remains "avsbdl"
+```
+
 ## Quality Standards Compliance
 
 ### Build & Compilation
@@ -1099,11 +1280,11 @@ Then the file contains zero U+2014 EM DASH characters and zero U+2013 EN DASH ch
 ### Verification Commands
 
 ```bash
-# Build verification
-xcodebuild -project DeskPad.xcodeproj -scheme DeskPad -configuration Debug build 2>&1 | tee build.log
+# Build verification (matches AGENTS.md "Build" entry)
+xcodebuild -scheme DeskPad -configuration Release -derivedDataPath build 2>&1 | tee build.log
 
-# Test execution
-xcodebuild -project DeskPad.xcodeproj -scheme DeskPad -destination "platform=macOS" test 2>&1 | tee test.log
+# Test execution (matches AGENTS.md "Tests" entry)
+xcodebuild -scheme DeskPad test 2>&1 | tee test.log
 
 # Grep guard: no deprecated AVSampleBufferDisplayLayer APIs used directly on the layer
 grep -rnE 'AVSampleBufferDisplayLayer[^.]*\.(enqueueSampleBuffer|flush|flushAndRemoveImage|status|error|timebase|readyForMoreMediaData|requiresFlushToResumeDecoding)\b' DeskPad/ && exit 1 || echo "OK: only sampleBufferRenderer path used"
@@ -1111,8 +1292,19 @@ grep -rnE 'AVSampleBufferDisplayLayer[^.]*\.(enqueueSampleBuffer|flush|flushAndR
 # Grep guard: no em-dashes in introduced files
 grep -rn $'—\|–' DeskPad/ && exit 1 || echo "OK: no em/en dashes"
 
-# Grep guard: every new file carries @agents-index
-grep -rL "@agents-index" DeskPad/Backend/Render DeskPad/Backend/Configuration DeskPad/Frontend/Menu
+# Grep guard: every new file carries @agents-index. Includes the
+# Frontend/Screen directory because the AVSBDL host view lives there
+# alongside render.metal_layer_host_view.swift.
+grep -rL "@agents-index" DeskPad/Backend/Render DeskPad/Backend/Configuration DeskPad/Frontend/Menu DeskPad/Frontend/Screen
+
+# Self-test verification (CR-0003 baseline): must continue to PASS with
+# the AVSBDL backend persisted, because Functional Requirement 19 forces
+# Metal for the duration of the self-test run.
+defaults write com.stengo.DeskPad DeskPad.presentationBackend avsbdl
+.agents/scripts/selftest-deskpad.sh
+
+# Live runtime check: AGENTS.md log-tailing script
+.agents/scripts/tail-deskpad-log.sh
 ```
 
 ## Risks and Mitigation
@@ -1258,3 +1450,119 @@ argument) keeps the user in control without restart.
   * `CMSampleBuffer.h` lines 598, 1518 (`kCMSampleAttachmentKey_DisplayImmediately`)
   * `CVPixelBuffer.h` line 56 (`kCVPixelFormatType_32BGRA`)
   * `CVPixelBufferIOSurface.h` line 62 (`CVPixelBufferGetIOSurface`)
+
+<!-- review-summary -->
+## CR Reviewer Summary (2026-06-05)
+
+CR-0002 was authored against the *proposed* spec of CR-0001 and predates
+both the implemented `cr/gpu-rendering` branch and CR-0003's test
+hardening + present-stall watchdog + `--self-test` mode. This review
+reconciled the CR against the implemented codebase. Code is treated as
+ground truth.
+
+### Findings by category
+
+- Drift: 9
+- Contradictions: 0
+- Ambiguity: 0
+- Requirement-to-AC coverage gaps (pre-review): 2 (the new FR-18 and
+  FR-19 added by this review each gained a corresponding AC)
+- AC-to-Test coverage gaps (pre-review): 2 (matched the new ACs; tests
+  added)
+- Scope/diagram inaccuracies: 2
+- Project-convention compliance gaps: 1 (verification commands used a
+  non-AGENTS.md xcodebuild invocation)
+
+### Drift items reconciled
+
+1. **Pacer type.** CR said `CADisplayLink` via
+   `NSView/NSWindow/NSScreen.displayLink(target:selector:)`. Reality:
+   `CAMetalDisplayLink(metalLayer:)` in
+   `DeskPad/Backend/Render/render.display_link_pacer.swift`. Baseline
+   Assumption and both diagrams updated.
+2. **`MetalLayerHostView` path.** CR placed it under `Backend/Render/`.
+   Reality: `DeskPad/Frontend/Screen/render.metal_layer_host_view.swift`.
+   References updated; the new AVSBDL host view was moved to
+   `DeskPad/Frontend/Screen/render.avsbdl_host_view.swift` for
+   symmetry, and its test was relocated to `DeskPadTests/Frontend/`.
+3. **No adaptive-mode-controller file.** CR referenced
+   `Backend/Render/render.adaptive_mode_controller.swift`. Reality:
+   `evaluateAdaptiveMode(switchThresholdSeconds:)` + `currentMode`
+   live inline on `screen.capture_render_coordinator.swift`;
+   `CaptureMode` is in `capture.stream_configuration.swift`. All
+   references rewritten; Affected Components updated; Phase 3 step 6
+   rewritten.
+4. **Capture publication shape.** CR said `SCStreamOutput` "already
+   publishes `CMSampleBuffer`s". Reality: `StreamOutput` publishes a
+   `CapturedSurface = IOSurface + ingest timestamp` and discards the
+   `CMSampleBuffer`. The CR's refactor proposal is still valid but
+   wording was corrected; Phase 1 step 5 now describes widening
+   `CapturedSurface` to retain the `CMSampleBuffer`.
+5. **`FramePresenter` is the per-tick driver.** CR called the wrap
+   target "the CR-0001 Metal renderer". Reality: the renderer is an
+   ensemble (`FramePresenter` + `MetalLayerHostView` +
+   `IOSurfaceTextureCache` + `BlitPipeline` + `DisplayLinkPacer`).
+   `render.metal_backend.swift` wraps the ensemble; the Metal adapter
+   forwards `FramePresenter.presentedFrameCount` for the watchdog.
+6. **Present-stall watchdog (CR-0003).** Not mentioned in CR-0002.
+   Added Functional Requirement 18 and AC-20: the AVSBDL backend must
+   expose `presentedFrameCount` so the watchdog continues to produce
+   meaningful samples after a backend switch. New test
+   `avsbdl_backend_presented_count_tests.swift` and integration test
+   `present_stall_watchdog_backend_agnostic_tests.swift` added.
+7. **`--self-test` mode (CR-0003).** Not mentioned in CR-0002. The
+   AVSBDL backend has no app-addressable drawable, so CR-0003 Layer 2
+   read-back and Layer 3 loopback cannot operate against it. Added
+   Functional Requirement 19 and AC-21: the self-test launch path
+   force-selects Metal regardless of `UserDefaults` /
+   `-DeskPadPresentationBackend`. New test
+   `selftest_forces_metal_backend_tests.swift` added;
+   `DeskPad/main.swift` is now in Affected Components.
+8. **Verification commands.** CR's `xcodebuild` invocation diverged
+   from the canonical commands in `AGENTS.md`. Rewritten to use
+   `-scheme DeskPad -configuration Release -derivedDataPath build` and
+   `-scheme DeskPad test`, and the per-CR self-test verification via
+   `.agents/scripts/selftest-deskpad.sh` was added.
+9. **Grep guards aligned.** Phase 4 step 3 now uses the same regex
+   as the Quality Standards Compliance grep guard so the two stay in
+   lockstep; the `@agents-index` guard now also covers
+   `DeskPad/Frontend/Screen` because the AVSBDL host view lives there.
+
+### Contradictions
+
+None found between the (updated) Functional Requirements, Acceptance
+Criteria, and Implementation Approach. The original FR-14 (adaptive
+mode no-op) and AC-14 (live switch tears down) are internally
+consistent after the rewrite of FR-14 to clarify that capture-side
+mode effects continue while presentation-side effects no-op.
+
+### Ambiguity
+
+The CR was already disciplined about MUST / MUST NOT language; no
+"should / may / appropriate / as needed" rewrites were needed. The
+single use of MAY in the revised FR-14 is deliberate (capture-side
+mode effects are permitted, not required, since the AVSBDL backend's
+behaviour does not depend on them).
+
+### Unresolved items (none)
+
+No items require human decision. The CR is internally consistent and
+aligned with the implemented codebase post-CR-0001 and post-CR-0003.
+
+### Notes for the implementor
+
+- The `CapturedSurface` value type is shared between
+  `StreamOutput.publish(surface:)` and `FramePresenter.present(tick:)`
+  today. Widening it to retain the source `CMSampleBuffer` is a
+  one-field change but touches both call sites; do it once in
+  Phase 1 step 5 rather than across phases.
+- The `MetalBackend` adapter need not re-implement device-loss
+  recovery; the existing `DeviceLossRecovery` lives on the
+  coordinator/`FramePresenter` path and the adapter is a passthrough.
+- `--self-test` exit codes (`0` on PASS, non-zero on FAIL) **MUST**
+  continue to hold after FR-19 is implemented; the new tests assert
+  this indirectly via the override log line, but the
+  `.agents/scripts/selftest-deskpad.sh` invocation in Verification
+  Commands is the end-to-end check.
+
+<!-- /review-summary -->
