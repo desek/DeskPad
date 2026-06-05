@@ -5,3 +5,4 @@ xcuserdata/
 # Build artifacts
 build/
 *.log
+.env

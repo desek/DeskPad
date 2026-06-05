@@ -17,7 +17,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-IDENTITY=$(security find-identity -v -p codesigning | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"')
+# Prefer the pinned identity from .env (DESKPAD_CODESIGN_IDENTITY);
+# fall back to keychain discovery when .env is absent.
+if [ -f .env ]; then
+    # shellcheck disable=SC1091
+    source .env
+fi
+IDENTITY="${DESKPAD_CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"')}"
 if [ -z "$IDENTITY" ]; then
     echo "ERROR: no valid Apple Development identity in keychain" >&2
     echo "Create one in Xcode -> Settings -> Accounts -> Manage Certificates" >&2
