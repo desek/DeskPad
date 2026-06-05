@@ -108,6 +108,32 @@ window). The decisive comparison is within-session: **AVSBDL (0.66 s) is
 now strictly below Metal (1.13 s) on the same machine in the same
 session**, which is the direction NFR-1 requires.
 
+### Did the fix regress Metal?
+
+No. An interleaved A/B of the pre-fix (`6ea8665`) and post-fix
+(`955e489`) Debug binaries, Metal backend, two 60 s windows each in the
+same session:
+
+| Binary | Run 1 | Run 2 |
+|--------|-------|-------|
+| pre-fix  | 0.64 s | 0.62 s |
+| post-fix | 0.71 s | 0.74 s |
+
+Two conclusions:
+
+1. The apparent Metal jump in the table above (0.12 s baseline versus
+   1.13 s after) was session variance, not the fix: the same pre-fix
+   binary measures 0.63 s in the later session versus 0.12 s in the
+   earlier one, a 5x ambient swing. These proxies are only meaningful
+   within one session; cross-session rows must not be compared directly.
+2. The fix costs Metal roughly 0.1 s per 60 s (~0.15 percent of one
+   core), consistent across both pairs: the per-delivery
+   `SCStreamFrameInfo.status` attachment parse plus relay slot
+   bookkeeping. In exchange, idle deliveries no longer mark the pacer
+   dirty, so Metal stops re-blitting identical frames on static content.
+   Latency is unaffected; `.complete` frames pass through with no added
+   hop on the present path.
+
 ## Status against the shipping gate
 
 The CPU axis no longer contradicts NFR-1: the provisional FAIL recorded in
