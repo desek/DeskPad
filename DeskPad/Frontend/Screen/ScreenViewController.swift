@@ -45,7 +45,14 @@ class ScreenViewController: SubscriberViewController<ScreenViewData>, NSWindowDe
         // surface the compositor sees.
         let coordinator = CaptureRenderCoordinator()
         coordinator.bindDisplay(displayID)
-        let host = coordinator.hostView
+        // CR-0002 FR-6: install the active backend's host view, not the
+        // fixed Metal host view. A `--launch arg` or persisted preference
+        // that selects AVSBDL has already run `switchBackend(.avsbdl)`
+        // inside `coordinator.init`, so `currentBackend.hostView` is the
+        // AVSBDL-backed view by this point. The Metal pacer is still
+        // attached to its layer because the Metal ensemble owns the
+        // CR-0001 pull model; for AVSBDL the pacer is harmless.
+        let host = coordinator.currentBackend.hostView
         host.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(host)
         NSLayoutConstraint.activate([
@@ -54,7 +61,7 @@ class ScreenViewController: SubscriberViewController<ScreenViewData>, NSWindowDe
             host.topAnchor.constraint(equalTo: view.topAnchor),
             host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        coordinator.pacer.attach(toMetalLayer: host.metalLayer)
+        coordinator.pacer.attach(toMetalLayer: coordinator.hostView.metalLayer)
         ScreenConfigurationEvents.shared.subscribe { [weak coordinator] event in
             guard let coordinator else { return }
             Task { @MainActor in

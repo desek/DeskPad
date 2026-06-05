@@ -88,6 +88,56 @@ benchmarks carry a documented carve-out at
   launch-argument flag (which is correct); the dotted UserDefaults key
   is documented separately.
 
+7. **Live frame hand-off through `PresentationBackend.enqueue(_:)`.**
+   Live verification on a signed Debug build found the AVSBDL backend
+   was visible (selection log line correct) but the window stayed white
+   because the production hot path never invoked `currentBackend.enqueue`.
+   Root cause: the CR-0001 pacer-pull model only fed the Metal ensemble;
+   AVSBDL's push-based renderer had no source. Fix:
+   - `StreamOutput` gains a `setOnSampleBuffer` callback fired once per
+     ingested `CMSampleBuffer` on the SCK delivery thread.
+   - `CaptureRenderCoordinator` wires that callback to a closure that
+     hops to the main actor (via an `@unchecked Sendable`
+     `UncheckedSampleBuffer` wrapper for the non-`Sendable`
+     `CMSampleBuffer`) and calls `currentBackend.enqueue(buffer)`.
+   - `ScreenViewController` installs `coordinator.currentBackend.hostView`
+     instead of the fixed `coordinator.hostView` so the startup switch
+     to AVSBDL puts the `AVSBDLHostView` in the view hierarchy.
+   FIXED: FR-2, AC-1, AC-2, FR-18 / AC-20 (verified live below).
+
+## Live verification (post-fix, AVSBDL push hand-off)
+
+A signed Debug build launched against the real virtual display with
+`-DeskPadPresentationBackend avsbdl` for 15 seconds produced the
+following log (rotating sandbox log at
+`~/Library/Containers/com.stengo.DeskPad/Data/Library/Logs/DeskPad/deskpad.log`):
+
+```
+backend=avsbdl selection resolved source=launchArgument
+backend=metal teardown: no-op (coordinator-owned ensemble)
+backend switch: metal -> avsbdl trigger=startup elapsed_ms=7.09
+coordinator bound to displayID=96
+DisplayLinkPacer attached to CAMetalLayer
+drawable resized to 3360x2100
+backend=avsbdl reconfigure flush completed (or timed out)
+SCStream startCapture
+live SCStream started on displayID=96
+first frame ingested (3360x2100)
+```
+
+Post-launch counts over the 15-second window:
+
+- `present stall:` lines: 0 (pre-fix: 1 per 10 s with
+  `ingested=155 presented=0 elapsed=3.117`)
+- `backend=avsbdl dropped` lines: 0
+- `backend=avsbdl recovery` lines: 0
+- `first frame ingested` lines: 1
+
+A control launch with `-DeskPadPresentationBackend metal` also produced
+zero present-stall lines, one `first frame ingested`, and the CR-0001
+`capture-to-present latency ms=13 frame=60` heartbeat, confirming the
+push hand-off does not regress the Metal pull path.
+
 ## Status
 
 | Identifier | Pre-fix | Post-fix |

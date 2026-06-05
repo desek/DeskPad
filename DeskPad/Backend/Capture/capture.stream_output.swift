@@ -69,6 +69,14 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
     private struct Handlers: Sendable {
         var stopErrorHandler: StopErrorHandler?
         var onArrival: (@Sendable () -> Void)?
+        /// CR-0002 FR-2 / AC-1 / AC-2: per-buffer push hand-off. Invoked
+        /// on the SCK delivery thread with the source `CMSampleBuffer`.
+        /// The coordinator wires this to a closure that hops to the main
+        /// actor and calls `currentBackend.enqueue(buffer)`. The buffer
+        /// crosses the actor hop inside a `@unchecked Sendable` wrapper
+        /// since `CMSampleBuffer` is not `Sendable` under Swift 6 strict
+        /// concurrency; ownership is held until the hop completes.
+        var onSampleBuffer: (@Sendable (CMSampleBuffer) -> Void)?
     }
 
     private let initialStopErrorHandler: StopErrorHandler?
@@ -108,6 +116,14 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
     /// FR-5 dirty bit and the next display-link tick presents.
     public func setOnArrival(_ handler: (@Sendable () -> Void)?) {
         handlerLock.withLock { $0.onArrival = handler }
+    }
+
+    /// CR-0002 FR-2: register a per-buffer push callback. Invoked once
+    /// per delivered `CMSampleBuffer` on the SCK delivery thread, before
+    /// the dirty-bit `onArrival` callback fires. The coordinator wires
+    /// this to `currentBackend.enqueue(buffer)`.
+    public func setOnSampleBuffer(_ handler: (@Sendable (CMSampleBuffer) -> Void)?) {
+        handlerLock.withLock { $0.onSampleBuffer = handler }
     }
 
     /// Latest captured surface bundle (`IOSurface` + ingest timestamp).
@@ -198,8 +214,11 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
             log.notice("first frame ingested (\(IOSurfaceGetWidth(surface))x\(IOSurfaceGetHeight(surface)))")
         }
         updateArrival(at: now)
-        let onArrival = handlerLock.withLock { $0.onArrival }
-        onArrival?()
+        let handlers = handlerLock.withLock { ($0.onArrival, $0.onSampleBuffer) }
+        if let sb = sampleBuffer, let onSampleBuffer = handlers.1 {
+            onSampleBuffer(sb)
+        }
+        handlers.0?()
     }
 
     /// EMA update for inter-arrival intervals. Alpha 0.1 trades some

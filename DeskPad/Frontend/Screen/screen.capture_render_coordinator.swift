@@ -10,9 +10,19 @@
 
 import AppKit
 import CoreGraphics
+import CoreMedia
 import Foundation
 import Metal
 import ScreenCaptureKit
+
+/// CR-0002 FR-2: `CMSampleBuffer` is not `Sendable` in Swift 6 strict
+/// concurrency. The capture-to-backend push hop completes synchronously
+/// during the SCK delivery callback's lifetime, so the buffer is alive
+/// for the entire actor hop; this wrapper carries it across without
+/// extending its lifetime beyond the hop.
+private struct UncheckedSampleBuffer: @unchecked Sendable {
+    let buffer: CMSampleBuffer
+}
 
 public enum CaptureRenderCoordinatorState: Sendable, Equatable {
     case idle
@@ -99,6 +109,18 @@ public final class CaptureRenderCoordinator {
         pacer.replacePresent { tick in presenterRef.present(tick: tick) }
         let pacerRef = pacer
         streamOutput.setOnArrival { Task { @MainActor in pacerRef.markDirty() } }
+        // CR-0002 FR-2 / AC-1 / AC-2: per-buffer push hand-off to the
+        // active `PresentationBackend`. The Metal backend's `enqueue`
+        // republishes through `StreamOutput` (no-op-equivalent), keeping
+        // CR-0001's pacer-pull model intact; the AVSBDL backend's
+        // `enqueue` is the only sink that makes a frame visible on its
+        // `AVSampleBufferDisplayLayer` (FR-7, AC-8).
+        streamOutput.setOnSampleBuffer { [weak self] buffer in
+            let wrapped = UncheckedSampleBuffer(buffer: buffer)
+            Task { @MainActor [weak self] in
+                self?.currentBackend.enqueue(wrapped.buffer)
+            }
+        }
         let actorRef = streamCoordinator
         streamOutput.setStopErrorHandler { _ in Task { await actorRef.triggerRestart() } }
         presenter.setOnCommandBufferError { [weak self] error in
