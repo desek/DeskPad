@@ -1,6 +1,6 @@
 ---
 name: cr-test-hardening-and-rendering-self-test
-description: Raise unit test coverage of the CR-0001 capture and render pipeline to approximately 95 to 96 percent overall (100 percent per file outside the documented TCC-bound exclusions), and add a three-layer autonomous rendering self-test so the white-window failure class is machine-detectable without human eyes.
+description: Raise unit test coverage of the CR-0001 capture and render pipeline to approximately 95 to 96 percent overall (100 percent per file outside two TCC-bound files totalling 159 lines, namely `capture.live_stream_handle.swift` at 94 lines and `capture.virtual_display_filter.swift` at 65 lines), and add a three-layer autonomous rendering self-test so the white-window failure class is machine-detectable without human eyes.
 id: "CR-0003"
 status: "draft"
 date: 2026-06-05
@@ -51,8 +51,9 @@ This CR closes that gap in two complementary ways. Part A raises unit
 coverage to approximately 95 to 96 percent overall, with 100 percent per
 file except a small set of files whose constructors require a real
 `SCContentFilter` from `SCShareableContent` and are therefore
-permanently excluded as TCC-bound (the live stream handle and the
-virtual display filter, together approximately 58 lines). Part B
+permanently excluded as TCC-bound (the live stream handle at 94 lines
+and the virtual display filter at 65 lines, 159 lines combined,
+verified by `wc -l`). Part B
 introduces a three-layer autonomous rendering self-test so the
 white-window failure class and its near neighbours are machine-detectable
 without human eyes: an always-on watchdog that emits a greppable warn
@@ -121,9 +122,11 @@ own. The forces pushing for this change:
 
 ## Current State
 
-* The `DeskPadTests` target contains 17 test files across `Logging/`,
+* The `DeskPadTests` target contains 16 test files across `Logging/`,
   `Capture/`, `Render/`, `Integration/`, and `Performance/` (verified
-  against `find DeskPadTests -name "*.swift"`).
+  against `find DeskPadTests -name "*.swift" -type f | wc -l`, which
+  also matches the CR-0001 validation report's "16/16 specified test
+  rows present" line).
 * Latest measured coverage from
   `xcodebuild -enableCodeCoverage YES test` (run on the target machine
   per the user-supplied numbers): 72.7 percent overall, 1020 of 1403
@@ -135,10 +138,18 @@ own. The forces pushing for this change:
 * No self-test launch mode exists. The only way to confirm the mirror
   shows pixels is to launch the app, grant TCC, and look. This is the
   exact failure mode that let the white-window bug land.
-* The structured logger already tees to
+* The structured logger already tees to the macOS standard app-logs
+  directory. Per `LogFileSink.logDirectoryURL()` (which calls
+  `FileManager.url(for: .libraryDirectory, in: .userDomainMask)` and
+  appends `Logs/DeskPad/deskpad.log`), the resolved path is
   `~/Library/Containers/com.stengo.DeskPad/Data/Library/Logs/DeskPad/deskpad.log`
-  per the file-sink implementation. The on-disk log is the natural
-  carrier for the watchdog signal in Part B Layer 1.
+  for sandboxed builds and
+  `~/Library/Logs/DeskPad/deskpad.log`
+  for non-sandboxed / unsigned / ad-hoc-signed builds. The script
+  `.agents/scripts/tail-deskpad-log.sh` already enumerates both
+  candidates; the self-test script in FR-14 **MUST** likewise check
+  both. The on-disk log is the natural carrier for the watchdog signal
+  in Part B Layer 1.
 
 ### Current State Diagram
 
@@ -172,10 +183,11 @@ Per-file coverage closure, exercising real `MTLDevice` and real
 for `SCStream` and `SCContentFilter` only where the construction path
 genuinely requires TCC at runtime. Every per-file closure is mechanical
 and is enumerated in the Implementation Approach. Permanent exclusions
-(`capture.live_stream_handle.swift` and
-`capture.virtual_display_filter.swift`, approximately 58 lines combined)
-are documented in the coverage report as TCC-bound and are covered by
-the runtime self-test of Part B and the manual addendum of CR-0001.
+(`capture.live_stream_handle.swift` at 94 lines and
+`capture.virtual_display_filter.swift` at 65 lines, 159 lines combined,
+verified by `wc -l`) are documented in the coverage report as TCC-bound
+and are covered by the runtime self-test of Part B and the manual
+addendum of CR-0001.
 
 ### Part B: Three-layer autonomous rendering self-test
 
@@ -260,16 +272,18 @@ flowchart TD
    100 percent line coverage **except** the explicitly listed TCC-bound
    exclusions in FR-3.
 3. The system **MUST** permanently exclude
-   `DeskPad/Backend/Capture/capture.live_stream_handle.swift` and
+   `DeskPad/Backend/Capture/capture.live_stream_handle.swift` (94 lines)
+   and
    `DeskPad/Backend/Capture/capture.virtual_display_filter.swift`
-   (approximately 58 lines combined, verifiable by `wc -l` of those
-   files) from the per-file 100 percent target on the documented
-   grounds that their constructors require an `SCContentFilter`
-   produced by `SCShareableContent.current`, which itself requires a
-   live TCC grant; this exclusion **MUST** be recorded in the coverage
-   summary with the rationale "TCC-bound: requires live Screen
-   Recording grant; covered by the runtime self-test in Part B and the
-   CR-0001 validation report's Runtime Verification Addendum".
+   (65 lines), 159 lines combined as of `source-commit: cc6842d` and
+   verifiable by `wc -l` of those files, from the per-file 100 percent
+   target on the documented grounds that their constructors require an
+   `SCContentFilter` produced by `SCShareableContent.current`, which
+   itself requires a live TCC grant; this exclusion **MUST** be
+   recorded in the coverage summary with the rationale "TCC-bound:
+   requires live Screen Recording grant; covered by the runtime
+   self-test in Part B and the CR-0001 validation report's Runtime
+   Verification Addendum".
 4. The system **MUST** introduce a `FakeMetalDrawable` test helper that
    conforms to `CAMetalDrawable`, wraps an offscreen `MTLTexture`
    constructed from a real `MTLDevice` (`MTLCreateSystemDefaultDevice()`
@@ -347,8 +361,13 @@ flowchart TD
     standard. The script **MUST** build the app for the Debug
     configuration with `CODE_SIGN_IDENTITY="-"`, launch the resulting
     binary with `--self-test`, parse the verdict from stdout (and as a
-    fallback from
-    `~/Library/Containers/com.stengo.DeskPad/Data/Library/Logs/DeskPad/deskpad.log`),
+    fallback from the on-disk log file, checking both the sandboxed
+    container path
+    `~/Library/Containers/com.stengo.DeskPad/Data/Library/Logs/DeskPad/deskpad.log`
+    and the non-sandboxed user-library path
+    `~/Library/Logs/DeskPad/deskpad.log`, in that order, matching the
+    candidate enumeration already implemented by
+    `.agents/scripts/tail-deskpad-log.sh`),
     print the verdict line to its own stdout, and exit with the same
     status as the self-test process. The script **MUST** carry the
     standard top docstring (purpose, usage, parameters) and the
@@ -420,6 +439,13 @@ flowchart TD
 * Modifications:
   * `DeskPad/Backend/Capture/capture.stream_output.swift`: add the
     public `ingestedFrameCount: Int` counter required by FR-5.
+  * `DeskPad/Logging/agents.log.file_sink.swift`: introduce a
+    `LogFileSinkConfiguration` struct (rotation threshold, retained
+    rotations, log directory) and a private initializer accepting it;
+    the `LogFileSink.shared` singleton retains its current production
+    constants. This is a test-only seam so Phase 1 step 5 can
+    exercise rotation against a temp directory without touching the
+    production `Library/Logs` location.
   * `DeskPad/main.swift`: parse `--self-test` and
     `--self-test-frames=N` early and route through the dispatcher.
   * `DeskPad/Frontend/Screen/screen.capture_render_coordinator.swift`:
@@ -569,12 +595,23 @@ production code changes are required for the closure itself (FR-5's
    percent to ~100 percent).** Add
    `DeskPadTests/Capture/stream_coordinator_lifecycle_tests.swift`
    driving a mock `StreamHandle` that records calls and surfaces
-   injectable errors. Cover: (a) `start`/`stop` happy path with
-   `state` transitions, (b) `updateConfiguration` increment, (c)
-   `runRestartSchedule` mid-cycle success (one attempt errors, the
-   next succeeds), (d) the bail-out branch when `handle` is nil, and
-   (e) the failed terminal state after the budget is exhausted by a
-   permanently-erroring handle.
+   injectable errors. The new file is a sibling of, and is
+   intentionally distinct from, the existing
+   `DeskPadTests/Capture/stream_coordinator_restart_tests.swift`
+   (which already covers the backoff-delay math and the restart-budget
+   exhaustion path via `runRestartScheduleForTest()`); the new file
+   covers the lifecycle and configuration branches the existing file
+   does not. Concretely, the new file covers: (a) `start`/`stop` happy
+   path with `state` transitions, (b) `updateConfiguration` increment,
+   (c) `runRestartSchedule` (the production, non-`ForTest` variant)
+   mid-cycle success (one attempt errors, the next succeeds), and
+   (d) the bail-out branch when `handle` is nil. The
+   permanently-erroring terminal-state path is exercised by the
+   existing `stream_coordinator_restart_tests.swift` and is not
+   duplicated here. If at implementation time a single file is
+   clearer, the two files **MAY** be consolidated into
+   `stream_coordinator_tests.swift`; either way, the union of branches
+   covered **MUST** match the enumeration above.
 4. **`DeskPad/Frontend/Screen/screen.capture_render_coordinator.swift`
    (60 percent to ~100 percent).** Add
    `DeskPadTests/Frontend/capture_render_coordinator_init_tests.swift`
@@ -614,9 +651,18 @@ production code changes are required for the closure itself (FR-5's
 8. **`DeskPad/SubscriberViewController.swift` (72 percent to ~100
    percent).** Add direct-call coverage for the subscribe / unsubscribe
    lifecycle methods.
-9. **`DeskPad/AppDelegate.swift` (91 percent to ~100 percent).** Add
-   direct-call coverage for `applicationWillTerminate(_:)` and any
-   remaining uncovered handlers.
+9. **`DeskPad/AppDelegate.swift` (91 percent to ~100 percent).** As of
+   `source-commit: cc6842d`, `AppDelegate` overrides only
+   `applicationDidFinishLaunching(_:)` and
+   `applicationShouldTerminateAfterLastWindowClosed(_:)`; it does
+   **not** hold a coordinator reference and does **not** override
+   `applicationWillTerminate(_:)`. The closure here is therefore
+   limited to direct-call coverage of the two existing handlers (and
+   the menu/window construction inside `applicationDidFinishLaunching`),
+   not the addition of new termination behaviour. If a future change
+   introduces `applicationWillTerminate(_:)` with a coordinator
+   shutdown path, that change owns the corresponding test; this CR
+   does not introduce that handler.
 10. **`DeskPad/Backend/Capture/capture.stream_output.swift`:** Add the
     `public private(set) var ingestedFrameCount: Int = 0` counter and
     increment it inside `ingest(_:)` after the `IOSurface` extraction
@@ -786,8 +832,10 @@ helper per FR-17.
 | `DeskPadTests/Render/blit_pipeline_tests.swift` | `testBlitProducesNonUniformOutput` | Real headless `MTLDevice`: encode a known source texture into a `.shared`-storage destination, wait for completion, read back, assert per-channel variance above a floor. (AC-2) | A real `MTLDevice` and a source texture seeded with a gradient. | Destination buffer mean and variance reflect the gradient. |
 | `DeskPadTests/Render/blit_pipeline_tests.swift` | `testReplaceDeviceRebuildsPipelineState` | Verifies `replaceDevice(_:)` mints a fresh pipeline state distinct from the prior one. (AC-2) | A second `MTLDevice` (or the same instance treated as if replaced). | New `MTLRenderPipelineState` identity. |
 | `DeskPadTests/Capture/stream_coordinator_lifecycle_tests.swift` | `testStartTransitionsToRunning` | Mock `StreamHandle`: assert `state == .running` after a successful `start`. (AC-3) | Mock that returns success. | `state == .running`; `startCount == 1`. |
+| `DeskPadTests/Capture/stream_coordinator_lifecycle_tests.swift` | `testStopTransitionsToIdle` | Mock `StreamHandle`: assert `state == .idle` after `stop` from running. (AC-3) | Mock returning success on start; stop called. | `state == .idle`; `stopCount == 1`. |
+| `DeskPadTests/Capture/stream_coordinator_lifecycle_tests.swift` | `testUpdateConfigurationPropagatesDimensions` | Mock `StreamHandle`: assert the new width/height reach the handle. (AC-3) | `updateConfiguration(width:height:)` invoked. | Handle's recorded `(width, height)` matches the call. |
 | `DeskPadTests/Capture/stream_coordinator_lifecycle_tests.swift` | `testRestartScheduleMidCycleSuccess` | One injected error then a success; assert the schedule stops on first success. (AC-3) | Mock that errors twice then succeeds. | `state == .running`; backoff observed for two intervals. |
-| `DeskPadTests/Capture/stream_coordinator_lifecycle_tests.swift` | `testRestartScheduleExhaustionTransitionsToFailed` | Verifies `.failed` after `maxRestartAttempts` consecutive errors. (AC-3) | Mock that always errors. | `state == .failed`; 10 attempts observed. |
+| `DeskPadTests/Capture/stream_coordinator_lifecycle_tests.swift` | `testStartWithoutInstalledHandleIsNoOp` | Bail-out branch when `handle` is nil. (AC-3) | `start()` called on a coordinator with no installed handle. | `state` unchanged; no crash. |
 | `DeskPadTests/Frontend/capture_render_coordinator_init_tests.swift` | `testEvaluatePermissionFlipFlops` | Fires the existing `evaluatePermission()` seam with a fake probe whose `preflight()` flips. (AC-4) | A fake probe driven through two preflight values. | State transitions match the probe's report. |
 | `DeskPadTests/Frontend/capture_render_coordinator_init_tests.swift` | `testHandleDeviceLossWiresThroughRecovery` | Fires `handleDeviceLoss(error:)` with a synthetic `MTLCommandBufferError.deviceRemoved`. (AC-4) | A synthetic error in the device-removed-class. | `DeviceLossOutcome.recovered` (or equivalent) returned; `hostView`, `textureCache`, `blitPipeline` each replaced once. |
 | `DeskPadTests/Frontend/capture_render_coordinator_init_tests.swift` | `testEvaluateAdaptiveModeRespectsEMA` | Drives `evaluateAdaptiveMode(switchThresholdSeconds:)` against a seeded `arrivalMetrics.intervalEMA`. (AC-4) | An EMA value above and below the threshold. | Mode transitions from low-latency to power-saving and back; transitions logged. |
@@ -796,8 +844,9 @@ helper per FR-17.
 | `DeskPadTests/Render/iosurface_texture_cache_eviction_tests.swift` | `testWeakEvictionMintsFreshTexture` | Construct a real `IOSurface` via `IOSurfaceCreate`; look up, release, look up again. (AC-6) | A bare `IOSurface`. | Second lookup returns a fresh `MTLTexture` instance. |
 | `DeskPadTests/Render/iosurface_texture_cache_eviction_tests.swift` | `testReplaceDeviceFlushesCache` | Verifies `replaceDevice(_:)` empties the dictionary. (AC-6) | A cache primed with one entry. | Post-replace dictionary count is 0. |
 | `DeskPadTests/Logging/logger_method_coverage_tests.swift` | `testAllLogLevelsRouteThroughFormatter` | Direct-call every log-level method and assert the formatter prefix appears once. (AC-7) | Each level method invoked once. | Captured lines match the expected prefix regex. |
-| `DeskPadTests/Frontend/subscriber_view_controller_tests.swift` | `testSubscribeUnsubscribeLifecycle` | Drive `viewDidLoad`/`viewDidDisappear` (or the analogous lifecycle) and assert the ReSwift subscription is registered and removed exactly once. (AC-8) | An in-test `Store` instance. | Subscriber count returns to its pre-call value. |
-| `DeskPadTests/Frontend/app_delegate_tests.swift` | `testApplicationWillTerminateStopsCoordinator` | Direct-call `applicationWillTerminate(_:)` and assert the coordinator transitions to `.idle`. (AC-9) | A coordinator with an installed stub handle. | Coordinator stop count incremented. |
+| `DeskPadTests/Frontend/subscriber_view_controller_tests.swift` | `testSubscribeUnsubscribeLifecycle` | Drive `viewWillAppear()` then `viewWillDisappear()` (the lifecycle methods actually overridden by `SubscriberViewController`, verified at `DeskPad/SubscriberViewController.swift`) and assert the ReSwift subscription is registered and removed exactly once. (AC-8) | An in-test `Store` instance. | Subscriber count returns to its pre-call value. |
+| `DeskPadTests/Frontend/app_delegate_tests.swift` | `testApplicationDidFinishLaunchingDispatchesAction` | Direct-call `applicationDidFinishLaunching(_:)` against an in-test store and assert the `AppDelegateAction.didFinishLaunching` action is dispatched exactly once. (AC-9) | A captured `Store` (or a dispatch-recording middleware) and a fresh `AppDelegate`. | Action observed once; `window` is non-nil. |
+| `DeskPadTests/Frontend/app_delegate_tests.swift` | `testApplicationShouldTerminateAfterLastWindowClosedReturnsTrue` | Direct-call `applicationShouldTerminateAfterLastWindowClosed(_:)` and assert it returns `true`. (AC-9) | A fresh `AppDelegate`. | Return value is `true`. |
 | `DeskPadTests/Capture/stream_output_ingest_counter_tests.swift` | `testIngestedFrameCountIncrementsOnce` | Verifies `ingestedFrameCount` advances by exactly one per successful `ingest(_:)`. (AC-10) | Three synthesized `CMSampleBuffer`s ingested in sequence. | `ingestedFrameCount == 3`. |
 | `DeskPadTests/Render/present_stall_watchdog_tests.swift` | `testNoEmissionWhenBothCountersAdvance` | Watchdog with controlled triples advancing both counters. (AC-11) | Triples where ingested and presented both increment. | Zero warn lines observed. |
 | `DeskPadTests/Render/present_stall_watchdog_tests.swift` | `testNoEmissionWhenNeitherAdvances` | Watchdog with controlled triples advancing neither. (AC-11) | Triples where both counters are flat. | Zero warn lines observed. |
@@ -821,7 +870,7 @@ helper per FR-17.
 
 | Test File | Test Name | Reason for Removal |
 |-----------|-----------|--------------------|
-| N/A | N/A | No existing test is obsoleted; this CR is purely additive on the test surface and additive plus one counter on the production surface. |
+| N/A | N/A | No existing test is obsoleted; this CR is purely additive on the test surface. The production surface is additive in four targeted ways enumerated under Affected Components: (a) one new public counter on `StreamOutput` (`ingestedFrameCount`); (b) a test-only configuration seam on `LogFileSink` (a private `init` accepting a `LogFileSinkConfiguration`, with the shared singleton retaining its current production constants); (c) one new watchdog file plus a wiring call in `screen.capture_render_coordinator.swift`; (d) one early `--self-test` branch in `main.swift` and the new `Frontend/Screen/SelfTest/` source files. No existing production behaviour is changed when `--self-test` is absent. |
 
 ## Acceptance Criteria
 
@@ -900,18 +949,19 @@ Then every captured line carries the expected filename:line and category prefix
 
 ```gherkin
 Given a SubscriberViewController and an in-test ReSwift Store
-When the subscribe and unsubscribe lifecycle methods are invoked
+When viewWillAppear() and viewWillDisappear() are invoked in order
 Then the subscriber count returns to its pre-call value
   And the resulting per-file coverage of SubscriberViewController.swift is 100 percent
 ```
 
-### AC-9: AppDelegate terminal handler is covered
+### AC-9: AppDelegate existing handlers are covered
 
 ```gherkin
-Given an AppDelegate with an installed coordinator stub
-When applicationWillTerminate(_:) is invoked
-Then the coordinator transitions to .idle
-  And the resulting per-file coverage of AppDelegate.swift is 100 percent
+Given an AppDelegate constructed in-process for tests
+When applicationDidFinishLaunching(_:) and applicationShouldTerminateAfterLastWindowClosed(_:) are invoked
+Then applicationDidFinishLaunching dispatches AppDelegateAction.didFinishLaunching exactly once and produces a non-nil window
+  And applicationShouldTerminateAfterLastWindowClosed returns true
+  And the resulting per-file coverage of AppDelegate.swift is 100 percent of the handlers present at source-commit cc6842d (no new handler is introduced by this CR)
 ```
 
 ### AC-10: StreamOutput exposes a monotonic ingestedFrameCount
@@ -1061,7 +1111,7 @@ grep -rL "@agents-index" DeskPad/Frontend/Screen/SelfTest DeskPad/Backend/Render
 grep -rn "FakeMetalDrawable" DeskPad/ && exit 1 || echo "OK: no FakeMetalDrawable in production"
 
 # Grep guard: no em-dashes in introduced files (AC-17)
-grep -rn $'—\|–' DeskPad/Frontend/Screen/SelfTest DeskPad/Backend/Render/render.present_stall_watchdog.swift DeskPadTests/ .agents/scripts/selftest-deskpad.sh && exit 1 || echo "OK: no em/en dashes"
+grep -rEn $'\xe2\x80\x94|\xe2\x80\x93' DeskPad/Frontend/Screen/SelfTest DeskPad/Backend/Render/render.present_stall_watchdog.swift DeskPadTests/ .agents/scripts/selftest-deskpad.sh && exit 1 || echo "OK: no em/en dashes"
 ```
 
 ## Risks and Mitigation
@@ -1180,11 +1230,11 @@ CR-0002 lands.
   before opening the per-file work; if any number has drifted,
   the per-file targets stand because they are absolute (100 percent
   per file outside the documented exclusions).
-* **Assumption:** the project's existing `Logger` wrapper exposes a
-  `warning` (or equivalent) level. If only `notice` and `error` are
-  exposed today, the implementor adds the `warning` level in Phase 2
-  as a one-line addition rather than overloading `error` (which is
-  reserved for unrecoverable conditions in the existing log).
+* **Resolved during review:** the project's existing `Logger` wrapper
+  already exposes a `warning` level. Verified at
+  `DeskPad/Logging/agents.log.logger.swift:96` (`public func warning(_:)`)
+  and `agents.log.logger.swift:27` (`case warning` in `LogLevel`). No
+  level addition is required for the Phase 2 watchdog.
 * **Assumption:** the virtual display is addressable by an `NSWindow`
   via `NSScreen` lookup using the `CGDirectDisplayID` carried by the
   `CGVirtualDisplay`. The CR-0001 codebase confirms the
@@ -1209,3 +1259,80 @@ CR-0002 lands.
   loopback: search via `.agents/scripts/apple-docs.search.sh` for
   `MTLBlitCommandEncoder`, `MTLStorageMode`, `CAMetalDrawable`,
   `IOSurfaceCreate`.
+
+<!-- review-summary -->
+## Review Summary (CR Reviewer pass, 2026-06-05)
+
+**Findings by category:**
+
+- Drift findings: 5
+  - "17 test files" → actual file count is 16 (Current State).
+  - "approximately 58 lines combined" for TCC-bound files → actual 159
+    lines (`capture.live_stream_handle.swift` 94 + `capture.virtual_display_filter.swift` 65), verified by `wc -l`. Affected
+    front matter `description`, Change Summary, Part A intro, FR-3.
+  - On-disk log path was stated only as the sandboxed container path,
+    but `LogFileSink.logDirectoryURL()` resolves to either
+    `~/Library/Containers/com.stengo.DeskPad/Data/Library/Logs/DeskPad/deskpad.log`
+    (sandboxed) or `~/Library/Logs/DeskPad/deskpad.log` (non-sandboxed
+    / unsigned / ad-hoc). The sibling script
+    `.agents/scripts/tail-deskpad-log.sh` already checks both;
+    self-test script (FR-14) reconciled to do the same.
+  - `SubscriberViewController` overrides `viewWillAppear()` /
+    `viewWillDisappear()`, not `viewDidLoad` / `viewDidDisappear` as
+    the original test row described. Fixed in test row and AC-8.
+  - `AppDelegate` at source-commit cc6842d holds no coordinator
+    reference and does not override `applicationWillTerminate(_:)`.
+    Original AC-9 and the matching test row asserted behaviour that
+    does not exist in production. Reframed AC-9 and the test rows to
+    cover the two handlers actually present
+    (`applicationDidFinishLaunching(_:)` and
+    `applicationShouldTerminateAfterLastWindowClosed(_:)`).
+
+- Contradictions resolved: 2
+  - "Tests to Remove" row claimed the CR was "additive plus one
+    counter on the production surface", contradicting Phase 1 step 5
+    (file-sink configuration seam), Phase 2 (watchdog wiring in
+    `screen.capture_render_coordinator.swift`), Phase 3 (`main.swift`
+    branch + new SelfTest sources), and Affected Components. Rewrote
+    the row to enumerate the four targeted production-surface
+    additions honestly.
+  - `Affected Components` modification list omitted the file-sink
+    configuration-seam refactor required by Phase 1 step 5; added.
+
+- Ambiguity / clarity fixes: 1
+  - `stream_coordinator_lifecycle_tests.swift` (new) vs the existing
+    `stream_coordinator_restart_tests.swift` overlapped on the
+    "budget exhausted -> failed" branch. Phase 1 step 3 now
+    explicitly carves the two files apart, removes the duplicate
+    "ExhaustionTransitionsToFailed" row from the new file, and adds
+    the missing "stop transitions to idle", "updateConfiguration
+    propagates dimensions", and "start without installed handle is
+    no-op" rows that the previous text implied but did not list.
+  - The `grep -rn $'—\|–'` em/en-dash guard was tightened to
+    `grep -rEn $'\xe2\x80\x94|\xe2\x80\x93'` so the byte pattern is
+    unambiguous regardless of locale.
+
+- Verification-command coverage: PASS. The Verification Commands
+  section already includes `xcodebuild -enableCodeCoverage YES test`,
+  `xcrun xccov view --report`, and
+  `.agents/scripts/selftest-deskpad.sh` per the project's CLI-first
+  standard.
+
+- AGENTS.md / project-convention compliance: PASS. New files carry
+  `@agents-index`; per-file LOC cap (200) is enforced by NFR-6 / AC-18;
+  hierarchical namespace naming respected in all introduced filenames;
+  test target mirrors the source namespace.
+
+**Unresolved items requiring human decision:** 0.
+
+The `applicationWillTerminate(_:)` question was resolved by reframing
+AC-9 to match present-day source rather than introducing a new
+handler. If a future CR adds coordinator shutdown on terminate, that
+CR owns the new handler and its test.
+
+**Open Questions** in the CR remain owned by the implementor (they
+are implementation-time verifications, not human-decision blockers):
+the per-file baseline numbers, the existence of `Logger.warning`
+(confirmed present at `agents.log.logger.swift:96`), and the
+addressability of the virtual display via `NSScreen` lookup.
+<!-- /review-summary -->
