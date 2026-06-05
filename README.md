@@ -62,3 +62,40 @@ DeskPad writes structured logs to `~/Library/Logs/DeskPad/deskpad.log` (every
 line is tagged `filename:line`). Inspect this file when reporting issues; it
 records capture and render state transitions, permission events, and any
 device-loss recovery.
+
+If the mirrored window goes blank but the app keeps running, search the log
+for the literal prefix `present stall:`. An always-on watchdog emits a
+warning line of the form `present stall: ingested=N presented=M elapsed=S`
+whenever frames are arriving from ScreenCaptureKit but the presenter has
+stopped advancing for three seconds, which fingerprints the white-window
+failure class. See CR-0003.
+
+## Rendering self-test (developers)
+
+DeskPad ships an autonomous rendering self-test so the white-window failure
+class is machine-detectable without launching the app and watching the
+window. Build and run it from the repository root:
+
+```sh
+.agents/scripts/selftest-deskpad.sh
+```
+
+The script builds DeskPad in Debug, launches the binary with `--self-test`,
+parses the verdict from stdout (falling back to the on-disk log), prints the
+verdict line, and exits with the same status as the self-test process. A
+`PASS` line looks like `PASS: frames=60 mean=R,G,B variance=V`; a `FAIL` line
+carries a stable reason suffix (for example `uniform_white`, `low_variance`,
+or `present_mismatch_at_point=(X,Y) expected=(R,G,B) actual=(R,G,B)`). Exit
+code 0 indicates PASS; non-zero indicates FAIL.
+
+Screen Recording (TCC) permission is bound to the code signature, so an
+ad-hoc rebuild re-prompts on every run. To keep the grant stable across
+rebuilds, copy `.env.example` to `.env` and fill in your machine-local
+signing identity (`DESKPAD_CODESIGN_IDENTITY`, optionally
+`DESKPAD_DEVELOPMENT_TEAM`); the script prefers the pinned identity when
+`.env` is present and falls back to ad-hoc signing otherwise. `.env` is
+git-ignored and must not be committed.
+
+See `docs/cr/CR-0003-test-hardening-and-rendering-self-test.md` for the
+full design and `docs/cr/CR-0003-coverage-summary.md` for the per-file
+test coverage table and documented TCC-bound carve-outs.
