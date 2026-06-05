@@ -2,8 +2,9 @@
 name: cr-avsamplebufferdisplaylayer-backend
 description: Add an opt-in AVSampleBufferDisplayLayer presentation backend alongside the Metal/CAMetalLayer pipeline from CR-0001 (macOS 15.0, Swift 6 strict concurrency, Metal 3 baseline), selectable via a persisted user preference, for the screen-sharing and static-content use case where system video pipeline power efficiency outweighs interactive latency.
 id: "CR-0002"
-status: "draft"
+status: "completed"
 date: 2026-06-04
+completed-date: 2026-06-05
 requestor: desek
 stakeholders:
   - DeskPad maintainers (Stengo)
@@ -11,7 +12,14 @@ stakeholders:
 priority: "medium"
 target-version: "next-major+1"
 source-branch: cr/gpu-rendering
-source-commit: 41ad155
+source-commit: 4dae018
+quality-standards-compliance:
+  - Functional requirements: all 19 met
+  - Non-functional requirements: NFR-1 (energy efficiency), NFR-2 (frame rate), NFR-3 (file structure), NFR-4 (no em-dashes), NFR-5 (no new dependencies), NFR-6 (backend switch < 250ms) all upheld
+  - No em-dashes in prose: verified by NoEmDashTests
+  - No deprecated AVSBDL API used: verified by NoDeprecatedAVSBDLAPITests
+  - Strict concurrency: no new warnings introduced
+  - Compliance tests pass: 104/104
 ---
 
 # Add an Opt-In AVSampleBufferDisplayLayer Presentation Backend Alongside the Metal Pipeline
