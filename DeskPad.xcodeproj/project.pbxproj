@@ -55,6 +55,16 @@
 		7A00000000000000000F0024 /* interactive_latency_budget_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F0009 /* interactive_latency_budget_tests.swift */; };
 		7A00000000000000000F0025 /* refresh_mismatch_pacing_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F000A /* refresh_mismatch_pacing_tests.swift */; };
 		7A00000000000000000F0026 /* steady_state_latency_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A00000000000000000F000B /* steady_state_latency_tests.swift */; };
+		7B00000000000000000C0301 /* fake_metal_drawable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0201 /* fake_metal_drawable.swift */; };
+		7B00000000000000000C0302 /* frame_presenter_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0202 /* frame_presenter_tests.swift */; };
+		7B00000000000000000C0303 /* blit_pipeline_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0203 /* blit_pipeline_tests.swift */; };
+		7B00000000000000000C0304 /* stream_coordinator_lifecycle_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0204 /* stream_coordinator_lifecycle_tests.swift */; };
+		7B00000000000000000C0305 /* capture_render_coordinator_init_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0205 /* capture_render_coordinator_init_tests.swift */; };
+		7B00000000000000000C0306 /* file_sink_rotation_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0206 /* file_sink_rotation_tests.swift */; };
+		7B00000000000000000C0307 /* iosurface_texture_cache_eviction_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0207 /* iosurface_texture_cache_eviction_tests.swift */; };
+		7B00000000000000000C0308 /* logger_method_coverage_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0208 /* logger_method_coverage_tests.swift */; };
+		7B00000000000000000C0309 /* stream_output_ingest_counter_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C0209 /* stream_output_ingest_counter_tests.swift */; };
+		7B00000000000000000C030A /* app_delegate_tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00000000000000000C020A /* app_delegate_tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -110,6 +120,16 @@
 		7A00000000000000000F0009 /* interactive_latency_budget_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = interactive_latency_budget_tests.swift; sourceTree = "<group>"; };
 		7A00000000000000000F000A /* refresh_mismatch_pacing_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = refresh_mismatch_pacing_tests.swift; sourceTree = "<group>"; };
 		7A00000000000000000F000B /* steady_state_latency_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = steady_state_latency_tests.swift; sourceTree = "<group>"; };
+		7B00000000000000000C0201 /* fake_metal_drawable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fake_metal_drawable.swift; sourceTree = "<group>"; };
+		7B00000000000000000C0202 /* frame_presenter_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = frame_presenter_tests.swift; sourceTree = "<group>"; };
+		7B00000000000000000C0203 /* blit_pipeline_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = blit_pipeline_tests.swift; sourceTree = "<group>"; };
+		7B00000000000000000C0204 /* stream_coordinator_lifecycle_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = stream_coordinator_lifecycle_tests.swift; sourceTree = "<group>"; };
+		7B00000000000000000C0205 /* capture_render_coordinator_init_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = capture_render_coordinator_init_tests.swift; sourceTree = "<group>"; };
+		7B00000000000000000C0206 /* file_sink_rotation_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = file_sink_rotation_tests.swift; sourceTree = "<group>"; };
+		7B00000000000000000C0207 /* iosurface_texture_cache_eviction_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iosurface_texture_cache_eviction_tests.swift; sourceTree = "<group>"; };
+		7B00000000000000000C0208 /* logger_method_coverage_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = logger_method_coverage_tests.swift; sourceTree = "<group>"; };
+		7B00000000000000000C0209 /* stream_output_ingest_counter_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = stream_output_ingest_counter_tests.swift; sourceTree = "<group>"; };
+		7B00000000000000000C020A /* app_delegate_tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = app_delegate_tests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +184,8 @@
 				7A00000000000000000C0005 /* stream_configuration_tests.swift */,
 				7A00000000000000000C0006 /* stream_output_tests.swift */,
 				7A00000000000000000C0007 /* stream_coordinator_restart_tests.swift */,
+				7B00000000000000000C0204 /* stream_coordinator_lifecycle_tests.swift */,
+				7B00000000000000000C0209 /* stream_output_ingest_counter_tests.swift */,
 			);
 			path = Capture;
 			sourceTree = "<group>";
@@ -217,6 +239,9 @@
 				7A00000000000000000D0007 /* display_link_pacer_tests.swift */,
 				7A00000000000000000D0008 /* device_loss_recovery_tests.swift */,
 				7A00000000000000000F0005 /* newest_frame_wins_tests.swift */,
+				7B00000000000000000C0202 /* frame_presenter_tests.swift */,
+				7B00000000000000000C0203 /* blit_pipeline_tests.swift */,
+				7B00000000000000000C0207 /* iosurface_texture_cache_eviction_tests.swift */,
 			);
 			path = Render;
 			sourceTree = "<group>";
@@ -279,9 +304,11 @@
 		7A00000000000000000B0003 /* DeskPadTests */ = {
 			isa = PBXGroup;
 			children = (
+				7B00000000000000000C0211 /* Support */,
 				7A00000000000000000B0004 /* Logging */,
 				7A00000000000000000C0009 /* Capture */,
 				7A00000000000000000D000A /* Render */,
+				7B00000000000000000C0210 /* Frontend */,
 				7A00000000000000000E0005 /* Integration */,
 				7A00000000000000000F000C /* Performance */,
 			);
@@ -303,8 +330,27 @@
 			isa = PBXGroup;
 			children = (
 				7A00000000000000000B0005 /* log_format_tests.swift */,
+				7B00000000000000000C0206 /* file_sink_rotation_tests.swift */,
+				7B00000000000000000C0208 /* logger_method_coverage_tests.swift */,
 			);
 			path = Logging;
+			sourceTree = "<group>";
+		};
+		7B00000000000000000C0210 /* Frontend */ = {
+			isa = PBXGroup;
+			children = (
+				7B00000000000000000C0205 /* capture_render_coordinator_init_tests.swift */,
+				7B00000000000000000C020A /* app_delegate_tests.swift */,
+			);
+			path = Frontend;
+			sourceTree = "<group>";
+		};
+		7B00000000000000000C0211 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				7B00000000000000000C0201 /* fake_metal_drawable.swift */,
+			);
+			path = Support;
 			sourceTree = "<group>";
 		};
 		6DC044502801877F00281728 /* DeskPad */ = {
@@ -523,6 +569,16 @@
 				7A00000000000000000F0024 /* interactive_latency_budget_tests.swift in Sources */,
 				7A00000000000000000F0025 /* refresh_mismatch_pacing_tests.swift in Sources */,
 				7A00000000000000000F0026 /* steady_state_latency_tests.swift in Sources */,
+				7B00000000000000000C0301 /* fake_metal_drawable.swift in Sources */,
+				7B00000000000000000C0302 /* frame_presenter_tests.swift in Sources */,
+				7B00000000000000000C0303 /* blit_pipeline_tests.swift in Sources */,
+				7B00000000000000000C0304 /* stream_coordinator_lifecycle_tests.swift in Sources */,
+				7B00000000000000000C0305 /* capture_render_coordinator_init_tests.swift in Sources */,
+				7B00000000000000000C0306 /* file_sink_rotation_tests.swift in Sources */,
+				7B00000000000000000C0307 /* iosurface_texture_cache_eviction_tests.swift in Sources */,
+				7B00000000000000000C0308 /* logger_method_coverage_tests.swift in Sources */,
+				7B00000000000000000C0309 /* stream_output_ingest_counter_tests.swift in Sources */,
+				7B00000000000000000C030A /* app_delegate_tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

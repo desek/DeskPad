@@ -53,6 +53,14 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
 
     private let initialStopErrorHandler: StopErrorHandler?
 
+    /// Monotonic counter of successful surface extractions. Incremented
+    /// exactly once per `ingest(_:)` (or test-only publish) call that
+    /// extracts an `IOSurface`. Observed by the CR-0003 Layer 1 watchdog
+    /// (`render.present_stall_watchdog.swift`) to detect the white-window
+    /// failure class (ingestion advancing without presentation).
+    private let ingestedCounterLock = OSAllocatedUnfairLock<Int>(initialState: 0)
+    public var ingestedFrameCount: Int { ingestedCounterLock.withLock { $0 } }
+
     /// Snapshot of the EMA of inter-arrival intervals (seconds) plus the
     /// last-seen ingest timestamp. The coordinator's adaptive-mode logic
     /// (FR-18) reads `intervalEMA` to decide whether to switch modes.
@@ -150,6 +158,7 @@ public final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @un
     }
 
     private func publish(surface: IOSurface) {
+        ingestedCounterLock.withLock { $0 += 1 }
         let now = CACurrentMediaTime()
         let isFirst = lock.withLock { state in
             let wasEmpty = state == nil

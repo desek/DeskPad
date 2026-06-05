@@ -23,6 +23,30 @@ import Foundation
 /// rotation. Failures are swallowed silently (logged once to stderr) because
 /// the unified logging system remains the primary observability channel; the
 /// file sink is a convenience tee for post-hoc grep.
+/// Test-only seam: parameterizes the rotation threshold, retained rotations,
+/// and target directory so unit tests can drive rotation against a temp
+/// directory in milliseconds without touching production `~/Library/Logs`.
+/// Production constructs the singleton with the defaults via `init()`.
+public struct LogFileSinkConfiguration: Sendable {
+    public let rotationThreshold: Int
+    public let retainedRotations: Int
+    /// When non-nil, the sink writes here instead of resolving the user
+    /// Library logs directory. Used by `file_sink_rotation_tests.swift`.
+    public let overrideDirectory: URL?
+
+    public static let productionDefault = LogFileSinkConfiguration(
+        rotationThreshold: 5 * 1024 * 1024,
+        retainedRotations: 3,
+        overrideDirectory: nil
+    )
+
+    public init(rotationThreshold: Int, retainedRotations: Int, overrideDirectory: URL?) {
+        self.rotationThreshold = rotationThreshold
+        self.retainedRotations = retainedRotations
+        self.overrideDirectory = overrideDirectory
+    }
+}
+
 public final class LogFileSink: @unchecked Sendable {
     /// Singleton entry point. Lazily resolves the log directory on first use
     /// so the sink does not perform I/O at app launch unless something logs.
@@ -31,12 +55,16 @@ public final class LogFileSink: @unchecked Sendable {
     /// Maximum file size in bytes before rotation triggers. 5 MiB chosen so a
     /// typical session fits in one file without rotation while pathological
     /// per-frame logging still cannot grow the file unbounded.
-    private let rotationThreshold: Int = 5 * 1024 * 1024
+    private let rotationThreshold: Int
 
     /// Number of rotated files retained alongside the active log. With one
     /// active file plus three rotations the on-disk footprint is bounded at
     /// roughly 4 * rotationThreshold = 20 MiB.
-    private let retainedRotations: Int = 3
+    private let retainedRotations: Int
+
+    /// Optional directory override; when nil, the sink resolves
+    /// `~/Library/Logs/DeskPad/` via `FileManager`.
+    private let overrideDirectory: URL?
 
     /// Serial queue funnelling all writes so the on-disk file cannot be
     /// interleaved across concurrent loggers.
@@ -49,7 +77,18 @@ public final class LogFileSink: @unchecked Sendable {
     /// produces a single stderr message rather than spamming every call site.
     private var hasReportedFailure = false
 
-    private init() {}
+    private convenience init() {
+        self.init(configuration: .productionDefault)
+    }
+
+    /// Test-only initializer accepting an explicit configuration so unit
+    /// tests can drive rotation against a temp directory with a small
+    /// threshold. Production must go through `LogFileSink.shared`.
+    internal init(configuration: LogFileSinkConfiguration) {
+        rotationThreshold = configuration.rotationThreshold
+        retainedRotations = configuration.retainedRotations
+        overrideDirectory = configuration.overrideDirectory
+    }
 
     /// Append a single log line. The call is non-blocking: the line is queued
     /// and written on the sink's serial queue. A trailing newline is appended
@@ -74,6 +113,12 @@ public final class LogFileSink: @unchecked Sendable {
     /// non-sandboxed contexts without conditional code.
     private func logDirectoryURL() throws -> URL {
         let fm = FileManager.default
+        if let override = overrideDirectory {
+            if !fm.fileExists(atPath: override.path) {
+                try fm.createDirectory(at: override, withIntermediateDirectories: true)
+            }
+            return override
+        }
         // FileManager.url(for: .libraryDirectory ...) returns the container's
         // Library when sandboxed and the user's Library otherwise. Append
         // "Logs/DeskPad" to land in the standard macOS app-logs location.
