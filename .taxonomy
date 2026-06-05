@@ -1,0 +1,9 @@
+# DeskPad Taxonomy
+
+## Rendering & Presentation
+
+**present stall**: A condition detected by the Layer 1 watchdog when the rendering pipeline has ingested new frames from ScreenCaptureKit but has not advanced the presenter's frame count for three seconds, indicating a drawable-starvation failure class. Logs the literal prefix `present stall: ingested=N presented=M elapsed=S` at warning level through the structured logger so CI and agents can grep the on-disk log for regressions without human eyes.
+
+## Self-Test & Diagnostics
+
+**self-test mode**: A launch routing flag `--self-test` parsed in `main.swift` that bypasses the normal window construction and instead runs a three-layer autonomous rendering diagnostic: Layer 2 reads back the presented drawable's texture and asserts per-channel mean and variance statistics (catching the white-window failure class), and Layer 3 renders a known test pattern on the virtual display and asserts captured and presented pixel values match at sample points. Exit code 0 indicates PASS; non-zero indicates FAIL with a reason string greppable by agents and CI runners.
